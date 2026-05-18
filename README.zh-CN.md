@@ -287,6 +287,15 @@ GPT_MODEL=gpt-4o-mini
 physical-agent llm-test
 ```
 
+在修改项目默认模型前，先单独测试某个模型：
+
+```bash
+physical-agent llm-test --model gpt-5.4
+physical-agent chat --planner llm --model gpt-5.4 --message "Say hello in one sentence."
+```
+
+如果某个模型失败，但另一个模型能正常返回，就把 `GPT_MODEL` 保持在可用模型上。OpenAI-compatible 服务只代表 HTTP 接口形状兼容，并不代表它一定支持所有模型名。
+
 使用 LLM planner：
 
 ```bash
@@ -310,6 +319,15 @@ physical-agent chat --planner llm --auto-step --message "Please pick the red blo
 ```
 
 chat 命令默认使用 `--planner auto`：如果 `.env` 里有 API 配置就使用 LLM planner，否则回退到 rule-based chat。chat agent 会读取 `CHAT.md`、`MEMORY.md`、`CAPABILITIES.md`、`WORLD.md` 和 `FEEDBACK.md`。它会把回复写回 `CHAT.md`，把当前意图写入 `PLAN.md`，把 proposed actions 写入 `ACTIONS.md`。真正执行仍然由 watch 校验并完成。
+
+如果 chat 打印 `LLM chat was unavailable`，不是框架崩了，而是 `--planner auto` 先尝试 API，失败后自动使用了本地 rule-based fallback。常见原因：
+
+- `HTTP 503`：上游服务商临时不可用。
+- `HTTP 429`：服务商对 key 或上游模型限流。
+- `SSL: UNEXPECTED_EOF_WHILE_READING`：服务商提前关闭 TLS 连接，常见于网关不稳定或 route/model 不支持。
+- `model not found` 或服务商自定义错误：把 `GPT_MODEL` 改成该服务商实际支持的模型名。
+
+使用 `physical-agent llm-test --model <model-name>` 验证候选模型。如果你希望 API 失败时直接报错，用 `--planner llm`；如果希望 API 波动时 CLI 仍然可用，保留默认 `--planner auto`。
 
 在另一个终端运行 watch 执行动作：
 

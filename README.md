@@ -270,6 +270,15 @@ Test the API connection:
 physical-agent llm-test
 ```
 
+Test a specific model before changing your project defaults:
+
+```bash
+physical-agent llm-test --model gpt-5.4
+physical-agent chat --planner llm --model gpt-5.4 --message "Say hello in one sentence."
+```
+
+If a model test fails but another model works, keep `GPT_MODEL` on the working model. OpenAI-compatible providers do not always expose every model name, even when their HTTP shape is compatible.
+
 Use the LLM planner:
 
 ```bash
@@ -293,6 +302,15 @@ physical-agent chat --planner llm --auto-step --message "Please pick the red blo
 ```
 
 The chat command defaults to `--planner auto`: it uses the LLM planner when `.env` contains API settings and falls back to rule-based chat otherwise. The chat agent reads `CHAT.md`, `MEMORY.md`, `CAPABILITIES.md`, `WORLD.md`, and `FEEDBACK.md`. It writes replies back to `CHAT.md`, writes its current intent to `PLAN.md`, and writes proposed actions to `ACTIONS.md`. Watch still validates and executes those actions.
+
+When chat prints `LLM chat was unavailable`, the framework did not crash. It means `--planner auto` tried the API first and then used the local rule-based fallback. Common causes:
+
+- `HTTP 503`: the upstream provider is temporarily unavailable.
+- `HTTP 429`: the provider is rate limiting the key or upstream model.
+- `SSL: UNEXPECTED_EOF_WHILE_READING`: the provider closed the TLS connection early, often due to gateway instability or an unsupported route/model.
+- `model not found` or provider-specific errors: set `GPT_MODEL` to a model name your provider actually supports.
+
+Use `physical-agent llm-test --model <model-name>` to verify a candidate model. If you want strict API behavior with no fallback, run chat with `--planner llm`; if you want the CLI to stay usable during API outages, keep the default `--planner auto`.
 
 Execute the proposed actions by running watch in another terminal:
 
