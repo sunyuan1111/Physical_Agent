@@ -12,6 +12,7 @@ from physical_agent.config import DEFAULT_CONFIG_NAME, load_config, write_defaul
 from physical_agent.doctor import doctor_ok, run_doctor
 from physical_agent.drivers.templates import create_driver_template
 from physical_agent.gui import run_gui
+from physical_agent.llm import OpenAICompatibleClient, OpenAICompatibleSettings
 from physical_agent.protocol.workspace import Workspace
 from physical_agent.quickstart import setup_project
 from physical_agent.watch.runtime import WatchRuntime
@@ -98,9 +99,11 @@ def watch(
 def run(
     task: Optional[str] = typer.Option(None, "--task", "-t", help="Task to run once."),
     config: Path = typer.Option(Path(DEFAULT_CONFIG_NAME), "--config", "-c", help="Config path."),
+    planner: Optional[str] = typer.Option(None, "--planner", help="Planner override: rule_based or llm."),
+    model: Optional[str] = typer.Option(None, "--model", help="LLM model override for --planner llm."),
     no_wait: bool = typer.Option(False, "--no-wait", help="Submit actions without waiting for feedback."),
 ) -> None:
-    runtime = AgentRuntime(config)
+    runtime = AgentRuntime(config, planner_name=planner, model=model)
     if task is None:
         asyncio.run(runtime.interactive())
         return
@@ -121,6 +124,24 @@ def run(
             typer.echo(f"- {item.get('action_id')}: {item.get('status')} - {item.get('message')}")
     elif actions and not no_wait:
         typer.echo("No feedback arrived before the timeout. Is `physical-agent watch` running?")
+
+
+@app.command("llm-test")
+def llm_test(
+    env_file: Path = typer.Option(Path(".env"), "--env-file", help="Path to .env file."),
+    model: Optional[str] = typer.Option(None, "--model", help="Model override."),
+    prompt: str = typer.Option("Reply with exactly: pong", "--prompt", help="Connectivity test prompt."),
+) -> None:
+    try:
+        settings = OpenAICompatibleSettings.from_env(env_file=env_file, model=model)
+        typer.echo("OpenAI-compatible settings:")
+        typer.echo(yaml.safe_dump(settings.public_summary(), sort_keys=False).strip())
+        result = OpenAICompatibleClient(settings).test_connection(prompt=prompt)
+    except Exception as exc:
+        typer.echo(f"LLM API test failed: {exc}")
+        raise typer.Exit(code=1) from exc
+    typer.echo("LLM API test passed.")
+    typer.echo(f"Response: {result['content']}")
 
 
 @app.command("inspect")

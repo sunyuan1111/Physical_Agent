@@ -236,6 +236,59 @@ pick the red block and place it on the tray
 
 produces a `pick` action followed by a dependent `place` action.
 
+## OpenAI-Compatible API Planner
+
+Physical Agent can use an OpenAI-compatible Chat Completions endpoint for planning while keeping the same safety boundary: the LLM only writes proposed actions to `ACTIONS.md`; watch still validates and executes them.
+
+Create a local `.env` file. It is ignored by git.
+
+```bash
+GPT_URL=https://your-provider.example/v1
+GPT_KEY=your_api_key
+GPT_MODEL=gpt-4o-mini
+```
+
+Supported variable names:
+
+- API key: `GPT_KEY` or `OPENAI_API_KEY`
+- Base URL: `GPT_URL` or `OPENAI_BASE_URL`
+- Model: `GPT_MODEL` or `OPENAI_MODEL`
+
+Test the API connection:
+
+```bash
+physical-agent llm-test
+```
+
+Use the LLM planner:
+
+```bash
+physical-agent setup --force
+physical-agent run --planner llm --task "pick the red block and place it on the tray" --no-wait
+physical-agent inspect
+```
+
+Execute the proposed actions by running watch in another terminal:
+
+```bash
+physical-agent watch
+```
+
+Or run one watch step in-process for a quick local check:
+
+```bash
+python -c "import asyncio; from physical_agent.watch.runtime import WatchRuntime; r=WatchRuntime('physical-agent.yaml'); asyncio.run(r.setup()); print('executed', asyncio.run(r.step(setup=False)))"
+physical-agent inspect
+```
+
+You can also make LLM planning the project default by editing `physical-agent.yaml`:
+
+```yaml
+agent:
+  planner: llm
+  model: gpt-4o-mini
+```
+
 ## Clean-Room Implementation
 
 Physical Agent is an independent implementation. It uses general public architecture ideas such as embodied-agent layering, watchdog/runtime separation, declarative driver manifests, Markdown workspace protocols, and MCP-style tool facades. It does not include third-party competitor code, copied file contents, copied README wording, copied CLI design, copied example task suites, or copied implementation details.

@@ -253,6 +253,59 @@ pick the red block and place it on the tray
 
 会生成一个 `pick` action 和一个依赖前者完成的 `place` action。
 
+## OpenAI 兼容 API Planner
+
+Physical Agent 可以使用 OpenAI-compatible Chat Completions 接口做规划，同时保持原有安全边界：LLM 只负责把任务转换成 action intent 并写入 `ACTIONS.md`，真正执行仍然由 watch 侧 safety gate 和 driver 完成。
+
+在项目根目录创建本地 `.env` 文件。该文件已被 git 忽略，不会提交到仓库。
+
+```bash
+GPT_URL=https://your-provider.example/v1
+GPT_KEY=your_api_key
+GPT_MODEL=gpt-4o-mini
+```
+
+支持的变量名：
+
+- API key：`GPT_KEY` 或 `OPENAI_API_KEY`
+- Base URL：`GPT_URL` 或 `OPENAI_BASE_URL`
+- Model：`GPT_MODEL` 或 `OPENAI_MODEL`
+
+测试 API 连通性：
+
+```bash
+physical-agent llm-test
+```
+
+使用 LLM planner：
+
+```bash
+physical-agent setup --force
+physical-agent run --planner llm --task "pick the red block and place it on the tray" --no-wait
+physical-agent inspect
+```
+
+在另一个终端运行 watch 执行动作：
+
+```bash
+physical-agent watch
+```
+
+也可以用单步模式做本地快速检查：
+
+```bash
+python -c "import asyncio; from physical_agent.watch.runtime import WatchRuntime; r=WatchRuntime('physical-agent.yaml'); asyncio.run(r.setup()); print('executed', asyncio.run(r.step(setup=False)))"
+physical-agent inspect
+```
+
+如果希望默认使用 LLM planner，可以编辑 `physical-agent.yaml`：
+
+```yaml
+agent:
+  planner: llm
+  model: gpt-4o-mini
+```
+
 ## MCP 扩展点
 
 项目中包含一个轻量的 MCP-shaped facade：

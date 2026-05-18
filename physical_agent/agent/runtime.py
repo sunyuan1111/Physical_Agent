@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
+from physical_agent.agent.llm_planner import LLMPlanner
 from physical_agent.agent.planner import Planner
 from physical_agent.agent.rule_based import RuleBasedPlanner
 from physical_agent.config import DEFAULT_CONFIG_NAME, PhysicalAgentConfig, load_config
@@ -17,12 +18,16 @@ class AgentRuntime:
         config_path: str | Path = DEFAULT_CONFIG_NAME,
         *,
         planner: Planner | None = None,
+        planner_name: str | None = None,
+        model: str | None = None,
     ):
         self.config_path = Path(config_path).resolve()
         self.base_dir = self.config_path.parent
         self.config: PhysicalAgentConfig | None = None
         self.workspace: Workspace | None = None
-        self.planner = planner or RuleBasedPlanner()
+        self.planner = planner
+        self.planner_name = planner_name
+        self.model = model
 
     async def setup(self) -> None:
         self.config = load_config(self.config_path)
@@ -42,7 +47,8 @@ class AgentRuntime:
             workspace.append_log(message, actor="agent")
             return {"ok": False, "message": message, "actions": []}
 
-        actions = self.planner.plan(task=task, capabilities=capabilities, world=world)
+        planner = self._resolve_planner()
+        actions = planner.plan(task=task, capabilities=capabilities, world=world)
         if not actions:
             message = "No action could be planned for this task."
             workspace.append_log(message, actor="agent")
@@ -104,6 +110,22 @@ class AgentRuntime:
         if self.config is None:
             raise RuntimeError("AgentRuntime has not been set up.")
         return self.config
+
+    def _resolve_planner(self) -> Planner:
+        if self.planner is not None:
+            return self.planner
+        config = self._config()
+        planner_name = (self.planner_name or config.agent.planner or "rule_based").lower()
+        if planner_name in {"rule_based", "rules", "offline"}:
+            self.planner = RuleBasedPlanner()
+            return self.planner
+        if planner_name in {"llm", "openai", "openai_compatible", "openai-compatible"}:
+            model = self.model
+            if model is None and config.agent.model != "fake/local":
+                model = config.agent.model
+            self.planner = LLMPlanner(env_file=str(self.base_dir / ".env"), model=model)
+            return self.planner
+        raise ValueError(f"Unsupported planner: {planner_name}")
 
     def _renumber_actions(self, actions: list[Action], workspace: Workspace) -> list[Action]:
         used_ids: set[str] = set()

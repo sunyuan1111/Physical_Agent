@@ -8,3 +8,4 @@ build/
 workspace/
 .codex-artifacts/
 /physical-agent.yaml
+.env
