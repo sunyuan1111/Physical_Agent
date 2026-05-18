@@ -16,6 +16,28 @@ def _request(url: str, *, method: str = "GET", payload: dict | None = None) -> d
         return json.loads(response.read().decode("utf-8"))
 
 
+def _read_text(url: str) -> str:
+    with urllib.request.urlopen(url, timeout=10) as response:
+        return response.read().decode("utf-8")
+
+
+def test_gui_homepage_has_language_toggle(tmp_path):
+    server = make_server(tmp_path / "physical-agent.yaml", port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        html = _read_text(f"{base_url}/")
+        assert "Physical Agent" in html
+        assert 'data-lang="en"' in html
+        assert 'data-lang="zh"' in html
+        assert "中文" in html
+        assert "Chat" in html
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_gui_http_demo_endpoint(tmp_path):
     server = make_server(tmp_path / "physical-agent.yaml", port=0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)

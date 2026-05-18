@@ -111,10 +111,13 @@ GUI 提供：
 - watch runtime 连接
 - 单步执行 pending actions
 - 多轮 chat
+- 中英文 UI 切换
 - 提交任务
 - pick/place quick demo
 - doctor 健康检查
 - robots、world、action board、feedback 状态视图
+
+GUI 会在浏览器里记住你的语言选择。点击顶部的 `English` / `中文` 即可切换界面语言。
 
 默认监听 `127.0.0.1:8765`：
 

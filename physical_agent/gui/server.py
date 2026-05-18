@@ -310,14 +310,14 @@ INDEX_HTML = r"""<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Physical Agent Console</title>
+  <title>Physical Agent</title>
   <style>
     :root {
-      --bg: #f6f7f9;
+      --bg: #f5f7fb;
       --panel: #ffffff;
-      --line: #d8dde6;
-      --text: #1d2430;
-      --muted: #5c6675;
+      --line: #d8deea;
+      --text: #1d2635;
+      --muted: #607086;
       --blue: #2563eb;
       --green: #15803d;
       --red: #b42318;
@@ -333,103 +333,105 @@ INDEX_HTML = r"""<!doctype html>
     }
     header {
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      justify-content: space-between;
       gap: 16px;
-      padding: 18px 24px;
-      border-bottom: 1px solid var(--line);
+      padding: 16px 20px;
       background: var(--panel);
+      border-bottom: 1px solid var(--line);
     }
     h1 { margin: 0; font-size: 20px; line-height: 1.2; }
+    h2 { margin: 0 0 12px; font-size: 16px; }
+    p { margin: 0; color: var(--muted); line-height: 1.45; }
     main {
       display: grid;
-      grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
-      gap: 16px;
-      padding: 16px;
+      grid-template-columns: minmax(320px, 1.15fr) minmax(300px, 0.85fr);
+      gap: 14px;
+      padding: 14px;
     }
-    section, aside {
+    section {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 16px;
+      padding: 14px;
     }
     .stack { display: grid; gap: 12px; }
-    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-    .wide { grid-column: 1 / -1; }
-    h2 { margin: 0 0 12px; font-size: 15px; }
-    h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
-    p { margin: 0; color: var(--muted); line-height: 1.5; }
-    button {
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .top-actions { justify-content: flex-end; }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    button, select {
       min-height: 36px;
       border: 1px solid #b8c1d1;
       border-radius: 6px;
       background: #fff;
       color: var(--text);
-      font-weight: 600;
-      cursor: pointer;
+      font: inherit;
     }
+    button { padding: 0 12px; font-weight: 650; cursor: pointer; }
     button.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
     button.success { background: var(--green); border-color: var(--green); color: #fff; }
-    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    select { padding: 0 8px; min-width: 136px; }
     textarea {
       width: 100%;
-      min-height: 92px;
+      min-height: 96px;
       resize: vertical;
       border: 1px solid #b8c1d1;
       border-radius: 6px;
       padding: 10px;
       font: inherit;
-      line-height: 1.4;
-    }
-    select {
-      min-height: 36px;
-      border: 1px solid #b8c1d1;
-      border-radius: 6px;
-      background: #fff;
-      color: var(--text);
-      padding: 0 8px;
-      font: inherit;
+      line-height: 1.45;
     }
     label {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 7px;
       color: var(--muted);
       font-size: 13px;
     }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .badge.ok { border-color: #86efac; color: var(--green); background: #f0fdf4; }
+    .badge.warn { border-color: #fcd34d; color: var(--amber); background: #fffbeb; }
+    .badge.fail { border-color: #fca5a5; color: var(--red); background: #fef2f2; }
+    .lang button {
+      min-height: 30px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-size: 12px;
+    }
+    .lang button.active { background: var(--text); border-color: var(--text); color: #fff; }
     .chat-log {
       display: grid;
       gap: 8px;
+      min-height: 160px;
       max-height: 360px;
       overflow: auto;
-      padding: 4px;
+      padding: 8px;
       border: 1px solid var(--line);
       border-radius: 6px;
       background: #fbfcfe;
     }
     .message {
+      max-width: 92%;
       border: 1px solid var(--line);
-      border-radius: 6px;
-      padding: 10px;
+      border-radius: 8px;
+      padding: 9px 10px;
       background: #fff;
       white-space: pre-wrap;
+      line-height: 1.45;
     }
-    .message.user { border-color: #bfdbfe; background: #eff6ff; }
-    .message.assistant { border-color: #bbf7d0; background: #f0fdf4; }
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      min-height: 26px;
-      padding: 4px 9px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      font-size: 12px;
-      color: var(--muted);
-      background: #fff;
-    }
-    .badge.ok { border-color: #86efac; color: var(--green); background: #f0fdf4; }
-    .badge.warn { border-color: #fcd34d; color: var(--amber); background: #fffbeb; }
-    .badge.fail { border-color: #fca5a5; color: var(--red); background: #fef2f2; }
+    .message.user { justify-self: end; border-color: #bfdbfe; background: #eff6ff; }
+    .message.assistant { justify-self: start; border-color: #bbf7d0; background: #f0fdf4; }
     .list { display: grid; gap: 8px; }
     .item {
       border: 1px solid var(--line);
@@ -437,110 +439,210 @@ INDEX_HTML = r"""<!doctype html>
       padding: 10px;
       background: #fff;
       min-width: 0;
+      white-space: pre-wrap;
     }
     .item strong { display: block; margin-bottom: 3px; }
-    code, pre {
-      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-      font-size: 12px;
-    }
-    pre {
-      overflow: auto;
-      max-height: 300px;
-      padding: 10px;
+    .item span { color: var(--muted); line-height: 1.45; overflow-wrap: anywhere; }
+    details {
       border: 1px solid var(--line);
       border-radius: 6px;
+      padding: 10px;
       background: #fbfcfe;
+    }
+    summary { cursor: pointer; font-weight: 650; }
+    pre {
+      max-height: 240px;
+      overflow: auto;
+      margin: 10px 0 0;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1.4;
       color: #243044;
     }
-    .path { overflow-wrap: anywhere; }
     @media (max-width: 900px) {
       main { grid-template-columns: 1fr; }
-      .grid { grid-template-columns: 1fr; }
       header { align-items: flex-start; flex-direction: column; }
+      .top-actions { justify-content: flex-start; }
+      .grid-2 { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
   <header>
     <div>
-      <h1>Physical Agent Console</h1>
-      <p>Markdown workspace control surface for watch, run, safety, and feedback.</p>
+      <h1>Physical Agent</h1>
+      <p data-i18n="subtitle">Chat, observe, and safely propose physical actions.</p>
     </div>
-    <div id="status" class="badge warn">Loading</div>
+    <div class="row top-actions">
+      <div id="status" class="badge warn" data-i18n="loading">Loading</div>
+      <div class="row lang" aria-label="Language">
+        <button type="button" data-lang="en">English</button>
+        <button type="button" data-lang="zh">中文</button>
+      </div>
+    </div>
   </header>
 
   <main>
-    <aside class="stack">
-      <section class="stack">
-        <h2>Controls</h2>
-        <button id="setup" class="primary">Setup Project</button>
-        <button id="reset">Reset Workspace</button>
-        <button id="start-watch">Start Watch</button>
-        <button id="step-watch">Run Watch Step</button>
-        <button id="demo" class="success">Run Pick and Place Demo</button>
-        <button id="refresh">Refresh</button>
-      </section>
-
-      <section class="stack">
-        <h2>Submit Task</h2>
-        <textarea id="task">pick the red block and place it on the tray</textarea>
-        <button id="submit-task" class="primary">Submit Task</button>
-        <p id="last-message"></p>
-      </section>
-
-      <section>
-        <h2>Doctor</h2>
-        <div id="doctor" class="list"></div>
-      </section>
-    </aside>
-
     <div class="stack">
       <section class="stack">
-        <h2>Chat Agent</h2>
-        <div id="chat-log" class="chat-log"></div>
-        <textarea id="chat-input">What can you see right now?</textarea>
-        <div class="grid">
-          <select id="chat-planner">
-            <option value="auto">Auto chat</option>
-            <option value="llm">LLM chat</option>
-            <option value="rule_based">Rule-based chat</option>
+        <div class="row" style="justify-content: space-between;">
+          <h2 data-i18n="chatTitle">Chat</h2>
+          <select id="chat-planner" aria-label="Planner">
+            <option value="auto" data-i18n="autoChat">Auto</option>
+            <option value="llm" data-i18n="llmChat">LLM</option>
+            <option value="rule_based" data-i18n="ruleChat">Rules</option>
           </select>
-          <label><input id="chat-auto-step" type="checkbox"> Run watch step</label>
         </div>
-        <button id="send-chat" class="primary">Send Chat</button>
+        <div id="chat-log" class="chat-log"></div>
+        <textarea id="chat-input" data-i18n-placeholder="chatPlaceholder" placeholder="Ask what the agent sees, or request a safe action."></textarea>
+        <div class="row">
+          <button id="send-chat" class="primary" data-i18n="send">Send</button>
+          <label><input id="chat-auto-step" type="checkbox"> <span data-i18n="autoStep">Run one watch step</span></label>
+        </div>
+      </section>
+
+      <section class="stack">
+        <h2 data-i18n="quickTitle">Quick actions</h2>
+        <div class="grid-2">
+          <button id="setup" class="primary" data-i18n="setup">Setup</button>
+          <button id="reset" data-i18n="reset">Reset</button>
+          <button id="start-watch" data-i18n="startWatch">Start watch</button>
+          <button id="step-watch" data-i18n="stepWatch">Run step</button>
+          <button id="demo" class="success" data-i18n="demo">Pick/place demo</button>
+          <button id="refresh" data-i18n="refresh">Refresh</button>
+        </div>
+        <p id="last-message"></p>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section>
+        <h2 data-i18n="worldTitle">World</h2>
+        <p id="world-summary" data-i18n="noWorld">No world state yet.</p>
+        <div id="robots" class="list" style="margin-top: 10px;"></div>
       </section>
 
       <section>
-        <h2>Project</h2>
+        <h2 data-i18n="actionsTitle">Actions</h2>
+        <div id="actions" class="list"></div>
+      </section>
+
+      <section>
+        <h2 data-i18n="feedbackTitle">Feedback</h2>
+        <div id="feedback-card" class="list"></div>
+      </section>
+
+      <section>
+        <h2 data-i18n="systemTitle">System</h2>
         <div id="project" class="list"></div>
-      </section>
-
-      <section class="grid">
-        <div>
-          <h2>World</h2>
-          <p id="world-summary">No world state yet.</p>
-          <pre id="world-state">{}</pre>
-        </div>
-        <div>
-          <h2>Feedback</h2>
-          <pre id="feedback">{}</pre>
-        </div>
-      </section>
-
-      <section class="grid">
-        <div>
-          <h2>Robots</h2>
-          <div id="robots" class="list"></div>
-        </div>
-        <div>
-          <h2>Action Board</h2>
-          <div id="actions" class="list"></div>
-        </div>
+        <details style="margin-top: 8px;">
+          <summary data-i18n="details">Details</summary>
+          <pre id="details-json">{}</pre>
+        </details>
       </section>
     </div>
   </main>
 
   <script>
+    const I18N = {
+      en: {
+        subtitle: "Chat, observe, and safely propose physical actions.",
+        loading: "Loading",
+        setupNeeded: "Setup needed",
+        readyWatch: "Ready · watch connected",
+        readyStopped: "Ready · watch stopped",
+        chatTitle: "Chat",
+        autoChat: "Auto",
+        llmChat: "LLM",
+        ruleChat: "Rules",
+        chatPlaceholder: "Ask what the agent sees, or request a safe action.",
+        send: "Send",
+        autoStep: "Run one watch step",
+        quickTitle: "Quick actions",
+        setup: "Setup",
+        reset: "Reset",
+        startWatch: "Start watch",
+        stepWatch: "Run step",
+        demo: "Pick/place demo",
+        refresh: "Refresh",
+        worldTitle: "World",
+        noWorld: "No world state yet.",
+        actionsTitle: "Actions",
+        feedbackTitle: "Feedback",
+        systemTitle: "System",
+        details: "Details",
+        noChat: "No chat messages yet.",
+        config: "Config",
+        workspace: "Workspace",
+        message: "Message",
+        notCreated: "Not created",
+        noRobots: "No robots yet",
+        startWatchHint: "Click Setup or Start watch.",
+        pending: "Pending",
+        completed: "Completed",
+        cancelled: "Cancelled",
+        none: "none",
+        latest: "Latest",
+        noFeedback: "No feedback yet.",
+        settingUp: "Setting up",
+        resetting: "Resetting",
+        startingWatch: "Starting watch",
+        runningStep: "Running step",
+        runningDemo: "Running demo",
+        refreshing: "Refreshing",
+        sendingChat: "Sending",
+        done: "Done"
+      },
+      zh: {
+        subtitle: "聊天、观察，并安全地提出物理动作。",
+        loading: "加载中",
+        setupNeeded: "需要初始化",
+        readyWatch: "就绪 · watch 已连接",
+        readyStopped: "就绪 · watch 已停止",
+        chatTitle: "对话",
+        autoChat: "自动",
+        llmChat: "LLM",
+        ruleChat: "规则",
+        chatPlaceholder: "询问 agent 看到了什么，或请求一个安全动作。",
+        send: "发送",
+        autoStep: "执行一次 watch step",
+        quickTitle: "常用操作",
+        setup: "初始化",
+        reset: "重置",
+        startWatch: "启动 watch",
+        stepWatch: "执行一步",
+        demo: "抓取演示",
+        refresh: "刷新",
+        worldTitle: "世界状态",
+        noWorld: "还没有世界状态。",
+        actionsTitle: "动作",
+        feedbackTitle: "反馈",
+        systemTitle: "系统",
+        details: "详情",
+        noChat: "还没有聊天消息。",
+        config: "配置",
+        workspace: "工作区",
+        message: "消息",
+        notCreated: "未创建",
+        noRobots: "还没有机器人",
+        startWatchHint: "点击初始化或启动 watch。",
+        pending: "待执行",
+        completed: "已完成",
+        cancelled: "已取消",
+        none: "无",
+        latest: "最新",
+        noFeedback: "还没有反馈。",
+        settingUp: "正在初始化",
+        resetting: "正在重置",
+        startingWatch: "正在启动 watch",
+        runningStep: "正在执行一步",
+        runningDemo: "正在运行演示",
+        refreshing: "正在刷新",
+        sendingChat: "正在发送",
+        done: "完成"
+      }
+    };
+
     const els = {
       status: document.querySelector("#status"),
       setup: document.querySelector("#setup"),
@@ -549,14 +651,11 @@ INDEX_HTML = r"""<!doctype html>
       stepWatch: document.querySelector("#step-watch"),
       demo: document.querySelector("#demo"),
       refresh: document.querySelector("#refresh"),
-      submitTask: document.querySelector("#submit-task"),
-      task: document.querySelector("#task"),
       lastMessage: document.querySelector("#last-message"),
       project: document.querySelector("#project"),
-      doctor: document.querySelector("#doctor"),
+      detailsJson: document.querySelector("#details-json"),
       worldSummary: document.querySelector("#world-summary"),
-      worldState: document.querySelector("#world-state"),
-      feedback: document.querySelector("#feedback"),
+      feedbackCard: document.querySelector("#feedback-card"),
       robots: document.querySelector("#robots"),
       actions: document.querySelector("#actions"),
       chatLog: document.querySelector("#chat-log"),
@@ -565,6 +664,27 @@ INDEX_HTML = r"""<!doctype html>
       chatAutoStep: document.querySelector("#chat-auto-step"),
       sendChat: document.querySelector("#send-chat")
     };
+
+    const savedLang = localStorage.getItem("physical-agent-lang");
+    let lang = savedLang || ((navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en");
+    let lastState = null;
+
+    function t(key) { return (I18N[lang] || I18N.en)[key] || I18N.en[key] || key; }
+
+    function setLanguage(next) {
+      lang = next;
+      localStorage.setItem("physical-agent-lang", lang);
+      document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+      document.querySelectorAll("[data-i18n]").forEach(node => { node.textContent = t(node.dataset.i18n); });
+      document.querySelectorAll("[data-i18n-placeholder]").forEach(node => { node.placeholder = t(node.dataset.i18nPlaceholder); });
+      document.querySelectorAll("[data-lang]").forEach(node => node.classList.toggle("active", node.dataset.lang === lang));
+      if (lastState) render(lastState);
+    }
+
+    document.querySelectorAll("[data-lang]").forEach(node => {
+      node.addEventListener("click", () => setLanguage(node.dataset.lang));
+    });
+    els.chatInput.addEventListener("input", () => { els.chatInput.dataset.touched = "true"; });
 
     async function api(path, options = {}) {
       const response = await fetch(path, {
@@ -577,19 +697,7 @@ INDEX_HTML = r"""<!doctype html>
     }
 
     async function post(path, payload = {}) {
-      return api(path, {method: "POST", body: JSON.stringify(payload)});
-    }
-
-    function pretty(value) {
-      return JSON.stringify(value || {}, null, 2);
-    }
-
-    function item(title, body, tone = "") {
-      const div = document.createElement("div");
-      div.className = "item";
-      div.innerHTML = `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(body || "")}</span>`;
-      if (tone) div.classList.add(tone);
-      return div;
+      return api(path, { method: "POST", body: JSON.stringify(payload) });
     }
 
     function escapeHtml(text) {
@@ -598,62 +706,94 @@ INDEX_HTML = r"""<!doctype html>
       }[char]));
     }
 
+    function item(title, body) {
+      const div = document.createElement("div");
+      div.className = "item";
+      div.innerHTML = `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(body || "")}</span>`;
+      return div;
+    }
+
     function render(state) {
+      lastState = state;
       const ready = Boolean(state.ready);
       els.status.className = ready ? "badge ok" : "badge warn";
-      els.status.textContent = ready
-        ? (state.watch_started ? "Ready, watch connected" : "Ready, watch stopped")
-        : "Setup needed";
+      els.status.textContent = ready ? (state.watch_started ? t("readyWatch") : t("readyStopped")) : t("setupNeeded");
 
-      els.project.innerHTML = "";
-      els.project.appendChild(item("Config", state.config_path || "Not created"));
-      els.project.appendChild(item("Workspace", state.workspace_path || "Not created"));
-      els.project.appendChild(item("Message", state.message || ""));
+      renderChat(state);
+      renderWorld(state);
+      renderActions(state);
+      renderFeedback(state);
+      renderSystem(state);
+    }
 
-      els.doctor.innerHTML = "";
-      for (const check of state.doctor || []) {
-        els.doctor.appendChild(item(check.ok ? "OK " + check.name : "FAIL " + check.name, check.message));
-      }
-
-      const world = state.world || {};
-      els.worldSummary.textContent = world.summary || "No world state yet.";
-      els.worldState.textContent = pretty(world.state);
-      els.feedback.textContent = pretty((state.feedback || {}).latest);
-
-      els.robots.innerHTML = "";
-      const robots = ((state.capabilities || {}).robots) || {};
-      if (Object.keys(robots).length === 0) {
-        els.robots.appendChild(item("No robots published", "Click Start Watch to publish capabilities."));
-      } else {
-        for (const [id, robot] of Object.entries(robots)) {
-          const caps = (robot.capabilities || []).map(cap => cap.name).join(", ");
-          els.robots.appendChild(item(id, `${robot.kind} via ${robot.driver}; ${caps}`));
-        }
-      }
-
-      els.actions.innerHTML = "";
-      const board = state.actions || {pending: [], completed: [], cancelled: []};
-      for (const name of ["pending", "completed", "cancelled"]) {
-        const rows = board[name] || [];
-        els.actions.appendChild(item(name.toUpperCase(), rows.length ? rows.map(row => `${row.id}: ${row.robot}.${row.capability}`).join("\n") : "none"));
-      }
-
+    function renderChat(state) {
       els.chatLog.innerHTML = "";
       const messages = ((state.chat || {}).messages) || [];
       if (messages.length === 0) {
         const empty = document.createElement("div");
         empty.className = "message";
-        empty.textContent = "No chat messages yet.";
+        empty.textContent = t("noChat");
         els.chatLog.appendChild(empty);
-      } else {
-        for (const message of messages.slice(-20)) {
-          const div = document.createElement("div");
-          div.className = `message ${message.role}`;
-          div.textContent = `${message.role}: ${message.content}`;
-          els.chatLog.appendChild(div);
-        }
-        els.chatLog.scrollTop = els.chatLog.scrollHeight;
+        return;
       }
+      for (const message of messages.slice(-16)) {
+        const div = document.createElement("div");
+        div.className = `message ${message.role}`;
+        div.textContent = `${message.role}: ${message.content}`;
+        els.chatLog.appendChild(div);
+      }
+      els.chatLog.scrollTop = els.chatLog.scrollHeight;
+    }
+
+    function renderWorld(state) {
+      const world = state.world || {};
+      els.worldSummary.textContent = world.summary || t("noWorld");
+      els.robots.innerHTML = "";
+      const robots = ((state.capabilities || {}).robots) || {};
+      if (Object.keys(robots).length === 0) {
+        els.robots.appendChild(item(t("noRobots"), t("startWatchHint")));
+        return;
+      }
+      for (const [id, robot] of Object.entries(robots)) {
+        const caps = (robot.capabilities || []).map(cap => cap.name).join(", ");
+        els.robots.appendChild(item(id, `${robot.kind || ""} · ${robot.driver || ""}\n${caps}`));
+      }
+    }
+
+    function renderActions(state) {
+      els.actions.innerHTML = "";
+      const board = state.actions || { pending: [], completed: [], cancelled: [] };
+      const labels = [["pending", t("pending")], ["completed", t("completed")], ["cancelled", t("cancelled")]];
+      for (const [name, label] of labels) {
+        const rows = board[name] || [];
+        const body = rows.length ? rows.map(row => `${row.id}: ${row.robot}.${row.capability}`).join("\n") : t("none");
+        els.actions.appendChild(item(label, body));
+      }
+    }
+
+    function renderFeedback(state) {
+      els.feedbackCard.innerHTML = "";
+      const latest = ((state.feedback || {}).latest) || {};
+      if (!Object.keys(latest).length) {
+        els.feedbackCard.appendChild(item(t("latest"), t("noFeedback")));
+        return;
+      }
+      els.feedbackCard.appendChild(item(
+        t("latest"),
+        `${latest.action_id || ""} · ${latest.status || ""}\n${latest.message || ""}`
+      ));
+    }
+
+    function renderSystem(state) {
+      els.project.innerHTML = "";
+      els.project.appendChild(item(t("config"), state.config_path || t("notCreated")));
+      els.project.appendChild(item(t("workspace"), state.workspace_path || t("notCreated")));
+      els.project.appendChild(item(t("message"), state.message || ""));
+      els.detailsJson.textContent = JSON.stringify({
+        plan: state.plan,
+        memory: state.memory,
+        doctor: state.doctor
+      }, null, 2);
     }
 
     async function refresh() {
@@ -664,30 +804,30 @@ INDEX_HTML = r"""<!doctype html>
       }
     }
 
-    async function run(label, fn) {
-      els.lastMessage.textContent = `${label}...`;
+    async function run(labelKey, fn) {
+      els.lastMessage.textContent = `${t(labelKey)}...`;
       try {
         const result = await fn();
-        els.lastMessage.textContent = result.message || "Done.";
+        els.lastMessage.textContent = result.message || t("done");
         render(result.state || await api("/api/state"));
       } catch (error) {
         els.lastMessage.textContent = error.message;
       }
     }
 
-    els.setup.addEventListener("click", () => run("Setting up project", () => post("/api/setup")));
-    els.reset.addEventListener("click", () => run("Resetting workspace", () => post("/api/setup", {force: true})));
-    els.startWatch.addEventListener("click", () => run("Starting watch", () => post("/api/watch/start")));
-    els.stepWatch.addEventListener("click", () => run("Running watch step", () => post("/api/watch/step")));
-    els.demo.addEventListener("click", () => run("Running demo", () => post("/api/demo")));
-    els.refresh.addEventListener("click", refresh);
-    els.submitTask.addEventListener("click", () => run("Submitting task", () => post("/api/task", {task: els.task.value})));
-    els.sendChat.addEventListener("click", () => run("Sending chat", () => post("/api/chat", {
+    els.setup.addEventListener("click", () => run("settingUp", () => post("/api/setup")));
+    els.reset.addEventListener("click", () => run("resetting", () => post("/api/setup", { force: true })));
+    els.startWatch.addEventListener("click", () => run("startingWatch", () => post("/api/watch/start")));
+    els.stepWatch.addEventListener("click", () => run("runningStep", () => post("/api/watch/step")));
+    els.demo.addEventListener("click", () => run("runningDemo", () => post("/api/demo")));
+    els.refresh.addEventListener("click", () => run("refreshing", () => api("/api/state")));
+    els.sendChat.addEventListener("click", () => run("sendingChat", () => post("/api/chat", {
       message: els.chatInput.value,
       planner: els.chatPlanner.value,
       auto_step: els.chatAutoStep.checked
     })));
 
+    setLanguage(lang);
     refresh();
   </script>
 </body>

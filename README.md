@@ -102,10 +102,13 @@ The console provides:
 - watch runtime connection
 - one-step action execution
 - multi-turn chat
+- English and Chinese UI switching
 - task submission
 - pick/place quick demo
 - doctor checks
 - robot, world, action board, and feedback views
+
+The GUI remembers your language choice in the browser. Use the `English` / `中文` buttons in the top bar to switch modes.
 
 By default it binds to `127.0.0.1:8765`:
 
