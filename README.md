@@ -42,54 +42,205 @@ physical-agent run
 
 ## Quick Start
 
-One-command local bootstrap from a fresh clone:
+This section is written for a first-time user. The default quickstart uses the built-in `mock_arm` simulator, so you do not need real hardware or an LLM API key.
+
+### Step 0: Check What You Need
+
+You need:
+
+- Python 3.11 or newer
+- a terminal
+- this repository
+
+Enter the repository root:
+
+```bash
+cd Physical_Agent
+```
+
+If you are already in the repository root, you can skip that. The root should contain `pyproject.toml`, `physical_agent/`, `examples/`, and this README.
+
+### Step 1: Install and Initialize
+
+For a fresh clone, run the bootstrap script:
 
 ```bash
 python scripts/bootstrap.py
 ```
 
-That creates `.venv`, installs the project with dev dependencies, runs tests, initializes the workspace, and runs a pick/place smoke test.
+This command will:
 
-If you already have a Python environment:
+- create a local `.venv`
+- install the project with development dependencies
+- run the test suite
+- create the default `physical-agent.yaml`
+- initialize `workspace/`
+- run a smoke test that verifies the mock arm can place `red_block` on `tray`
+
+If you already manage your own Python environment, you can run the manual path:
 
 ```bash
 pip install -e .[dev]
 physical-agent setup --smoke-test
 ```
 
-Start the GUI:
+You are ready when you see output like:
+
+```text
+Physical Agent project is ready.
+Config: .../physical-agent.yaml
+Workspace: .../workspace
+Smoke test passed: executed 2 action(s), red_block location is tray.
+```
+
+### Step 2: Run the GUI First
+
+The GUI is the easiest way to see the workspace state change:
 
 ```bash
 physical-agent gui
 ```
 
-The GUI opens a local console for setup, watch start/step, task submission, quick demo execution, and workspace inspection.
+The browser will open a local console. In the GUI you can:
 
-You can still run the two-process CLI flow. Start the physical side in one terminal:
+1. click setup or reset to prepare the workspace
+2. click watch start to connect the mock robot
+3. click quick demo to submit the pick/place task
+4. click step or auto-step to let watch execute actions
+5. inspect robots, world, actions, and feedback
+
+If the browser does not open automatically, visit:
+
+```text
+http://127.0.0.1:8765
+```
+
+The main idea to watch for:
+
+```text
+CAPABILITIES.md tells the agent what the robot can do.
+ACTIONS.md is the action queue proposed by the agent.
+FEEDBACK.md records what watch executed.
+WORLD.md stores the latest observed world state.
+```
+
+### Step 3: Run the Two-Terminal CLI Flow
+
+After the GUI path works, the CLI flow is easier to understand. Physical Agent's core runtime uses two terminals:
+
+```text
+Terminal 1: physical-agent watch
+Terminal 2: physical-agent run --task "..."
+```
+
+In the first terminal, start the physical-side watch process:
 
 ```bash
 physical-agent watch
 ```
 
-Submit a task from another terminal:
+Keep this terminal running. It loads drivers, publishes capabilities, watches actions, and executes them.
+
+In a second terminal, submit a task:
 
 ```bash
 physical-agent run --task "pick the red block and place it on the tray"
 ```
 
-Inspect the workspace state:
+If watch is running, you should see a completed task and feedback similar to:
+
+```text
+Task completed.
+Actions:
+- act_001: arm_1.pick object_id: red_block
+- act_002: arm_1.place target: tray
+Feedback:
+- act_001: completed - Picked red_block.
+- act_002: completed - Placed red_block on tray.
+```
+
+### Step 4: Inspect the Workspace
+
+After running a task, inspect the current state:
 
 ```bash
 physical-agent inspect
 ```
 
-Check project health:
+You should see the connected mock robot, no pending actions, completed actions, and latest feedback.
+
+You can also open the Markdown protocol files directly:
+
+```text
+workspace/
+  TASK.md
+  CAPABILITIES.md
+  WORLD.md
+  ACTIONS.md
+  FEEDBACK.md
+  SAFETY.md
+  LOG.md
+```
+
+Those files are the communication protocol between the agent and watch.
+
+### Step 5: Run Health Checks
+
+If something does not work, start with:
 
 ```bash
 physical-agent doctor
 ```
 
-The default project uses the built-in `mock_arm` driver, so no hardware or API key is required.
+Common cases:
+
+- `No capabilities are available yet`: `physical-agent watch` has not started or did not publish `CAPABILITIES.md`.
+- `No feedback arrived before the timeout`: the agent wrote actions, but watch is not running to execute them.
+- `Workspace is not initialized`: run `physical-agent setup` or use setup in the GUI.
+- To start over: run `physical-agent setup --force --smoke-test`.
+
+### Step 6: Understand the Default Demo
+
+The default `physical-agent.yaml` configures one mock arm:
+
+```yaml
+robots:
+  arm_1:
+    driver: mock_arm
+    config:
+      objects:
+        red_block:
+          type: block
+          color: red
+          location: table
+        tray:
+          type: tray
+          location: table
+```
+
+So this task:
+
+```text
+pick the red block and place it on the tray
+```
+
+is turned by the local rule-based planner into two actions:
+
+```text
+arm_1.pick(object_id=red_block)
+arm_1.place(target=tray)
+```
+
+watch validates both actions and then calls the `mock_arm` driver. No real robot is involved.
+
+### Step 7: Where to Go Next
+
+After quickstart works:
+
+1. To understand communication, inspect `workspace/*.md`.
+2. To understand hardware onboarding, read the "Driver Contract" section.
+3. To see a Xiaozhi MCP bridge example, read `docs/xiaozhi-driver-tutorial.zh-CN.md`.
+4. To start a new hardware adapter, run `physical-agent driver new my_driver`.
 
 ## Local GUI
 

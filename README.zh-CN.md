@@ -51,54 +51,225 @@ Workspace: Markdown files are the protocol between cognition and execution.
 
 ## 快速开始
 
-从 fresh clone 开始，一条命令完成本地环境配置、安装、测试、workspace 初始化和 quick smoke test：
+这一节按“新手第一次打开项目”的顺序写。默认 quickstart 使用内置 `mock_arm` 模拟机械臂，不需要真实硬件，也不需要 LLM API key。
+
+### 第 0 步：确认你有什么
+
+你需要：
+
+- Python 3.11 或更高版本
+- 一个终端
+- 当前仓库代码
+
+先进入项目根目录：
+
+```bash
+cd Physical_Agent
+```
+
+如果你已经在仓库根目录，可以跳过这一步。仓库根目录应该能看到 `pyproject.toml`、`physical_agent/`、`examples/` 和 `README.zh-CN.md`。
+
+### 第 1 步：安装并初始化项目
+
+推荐新手直接运行 bootstrap：
 
 ```bash
 python scripts/bootstrap.py
 ```
 
-这个命令会创建 `.venv`，安装开发依赖，运行测试，执行 `physical-agent setup --smoke-test`，并验证默认 mock arm 能完成 pick/place。
+这条命令会自动完成：
 
-如果你已经有 Python 环境，可以直接运行：
+- 创建本地虚拟环境 `.venv`
+- 安装项目和开发依赖
+- 运行测试
+- 生成默认 `physical-agent.yaml`
+- 初始化 `workspace/`
+- 运行一次 smoke test，验证 mock 机械臂能把 `red_block` 放到 `tray`
+
+如果你已经自己管理 Python 环境，也可以手动运行：
 
 ```bash
 pip install -e .[dev]
 physical-agent setup --smoke-test
 ```
 
-启动 GUI：
+看到类似下面的输出，就说明项目已经准备好了：
+
+```text
+Physical Agent project is ready.
+Config: .../physical-agent.yaml
+Workspace: .../workspace
+Smoke test passed: executed 2 action(s), red_block location is tray.
+```
+
+### 第 2 步：先用 GUI 跑通一遍
+
+对新手来说，GUI 是最容易理解 workspace 状态的入口：
 
 ```bash
 physical-agent gui
 ```
 
-GUI 会打开一个本地控制台，可以完成 setup、watch start/step、提交任务、运行 quick demo 和查看 workspace 状态。
+浏览器会打开本地控制台。你可以在 GUI 里完成这些动作：
 
-你也可以继续使用双进程 CLI 模式。在第一个终端启动物理侧 watch：
+1. 点击 setup 或 reset，准备 workspace。
+2. 点击 watch start，连接 mock robot。
+3. 点击 quick demo，提交 pick/place 示例任务。
+4. 点击 step 或 auto-step，让 watch 执行动作。
+5. 查看 robots、world、actions、feedback 的变化。
+
+如果浏览器没有自动打开，可以手动访问：
+
+```text
+http://127.0.0.1:8765
+```
+
+GUI 里最重要的理解点是：
+
+```text
+CAPABILITIES.md 告诉 agent 当前有哪些能力。
+ACTIONS.md 是 agent 提交的动作队列。
+FEEDBACK.md 是 watch 执行后的结果。
+WORLD.md 是 watch 更新后的世界状态。
+```
+
+### 第 3 步：用 CLI 理解双进程模式
+
+GUI 跑通后，再看 CLI 会更清楚。Physical Agent 的核心运行方式是两个终端：
+
+```text
+Terminal 1: physical-agent watch
+Terminal 2: physical-agent run --task "..."
+```
+
+第一个终端启动物理侧 watch：
 
 ```bash
 physical-agent watch
 ```
 
-在第二个终端提交任务：
+watch 会一直运行，负责加载 driver、发布能力、监听动作、执行动作。不要关闭这个终端。
+
+第二个终端提交任务：
 
 ```bash
 physical-agent run --task "pick the red block and place it on the tray"
 ```
 
-查看当前 workspace 状态：
+如果 watch 正在运行，你会看到任务完成，并且有类似这样的反馈：
+
+```text
+Task completed.
+Actions:
+- act_001: arm_1.pick object_id: red_block
+- act_002: arm_1.place target: tray
+Feedback:
+- act_001: completed - Picked red_block.
+- act_002: completed - Placed red_block on tray.
+```
+
+### 第 4 步：查看 workspace 状态
+
+执行后可以查看当前状态：
 
 ```bash
 physical-agent inspect
 ```
 
-检查项目健康状态：
+你应该能看到：
+
+```text
+Robots:
+- arm_1: arm via mock_arm (...)
+
+World summary:
+...
+
+Pending actions:
+- none
+
+Completed actions:
+- act_001: arm_1.pick
+- act_002: arm_1.place
+
+Latest feedback:
+...
+```
+
+也可以直接打开 `workspace/` 目录里的 Markdown 文件：
+
+```text
+workspace/
+  TASK.md
+  CAPABILITIES.md
+  WORLD.md
+  ACTIONS.md
+  FEEDBACK.md
+  SAFETY.md
+  LOG.md
+```
+
+这几个文件就是 agent 和 watch 之间的通信协议。
+
+### 第 5 步：做健康检查
+
+如果遇到问题，先运行：
 
 ```bash
 physical-agent doctor
 ```
 
-默认配置使用内置 `mock_arm` driver，不需要真实硬件，也不需要 LLM API key。
+它会检查配置、workspace、driver、依赖等基础状态。
+
+常见情况：
+
+- `No capabilities are available yet`：还没有启动 `physical-agent watch`，或者 watch 没有成功发布 `CAPABILITIES.md`。
+- `No feedback arrived before the timeout`：agent 已经写入动作，但 watch 没在运行，所以没人执行。
+- `Workspace is not initialized`：先运行 `physical-agent setup` 或 `physical-agent gui` 里的 setup。
+- 想重新开始：运行 `physical-agent setup --force --smoke-test`。
+
+### 第 6 步：理解默认 quickstart 做了什么
+
+默认 `physical-agent.yaml` 配置了一个 mock 机械臂：
+
+```yaml
+robots:
+  arm_1:
+    driver: mock_arm
+    config:
+      objects:
+        red_block:
+          type: block
+          color: red
+          location: table
+        tray:
+          type: tray
+          location: table
+```
+
+所以这个任务：
+
+```text
+pick the red block and place it on the tray
+```
+
+会被本地 rule-based planner 转成两个 action：
+
+```text
+arm_1.pick(object_id=red_block)
+arm_1.place(target=tray)
+```
+
+watch 会检查这两个 action 是否安全、参数是否满足 schema，然后调用 `mock_arm` driver 执行。整个过程不需要真实机械臂。
+
+### 第 7 步：下一步看什么
+
+跑通 quickstart 后，建议按这个顺序继续看：
+
+1. 想理解 agent 和 watch 如何通信：看 `workspace/*.md`。
+2. 想理解 driver 如何接入硬件：看“Driver Contract”章节。
+3. 想看小智 MCP 接入：看 `docs/xiaozhi-driver-tutorial.zh-CN.md`。
+4. 想接真实设备：先用 `physical-agent driver new my_driver` 生成模板。
 
 ## 本地 GUI
 
