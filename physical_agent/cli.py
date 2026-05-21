@@ -8,6 +8,7 @@ import typer
 import yaml
 
 from physical_agent.agent.chat_runtime import ChatRuntime
+from physical_agent.agent.onboarding import HardwareIntegrationAssistant
 from physical_agent.agent.runtime import AgentRuntime
 from physical_agent.config import DEFAULT_CONFIG_NAME, load_config, write_default_config
 from physical_agent.doctor import doctor_ok, run_doctor
@@ -237,11 +238,41 @@ def inspect(
         typer.echo("- none")
 
 
+@app.command("integrate")
+def integrate(
+    source: str = typer.Argument(..., help="Local path, GitHub repo URL, or Python package to analyze."),
+    config: Path = typer.Option(Path(DEFAULT_CONFIG_NAME), "--config", "-c", help="Config path."),
+    output: Optional[Path] = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Target driver directory. Default: ./physical-agent-integration/<driver-name>.",
+    ),
+    name: Optional[str] = typer.Option(None, "--name", help="Override the generated driver name."),
+) -> None:
+    assistant = HardwareIntegrationAssistant(
+        source,
+        output_dir=output,
+        name=name,
+        base_dir=config.resolve().parent,
+    )
+    result = assistant.generate()
+    typer.echo("Physical Agent integration scaffold created.")
+    typer.echo(f"Source: {result.source.source}")
+    typer.echo(f"Output: {result.output_path}")
+    typer.echo("Generated files:")
+    for file_path in result.generated_files:
+        typer.echo(f"- {file_path}")
+    typer.echo("\nNext steps:")
+    for step in result.source.next_steps:
+        typer.echo(f"- {step}")
+
+
 @driver_app.command("new")
 def driver_new(name: str = typer.Argument(..., help="Directory/name for the new driver.")) -> None:
     path = create_driver_template(name)
     typer.echo(f"Created driver template at {path}")
-    typer.echo("Files: physical_driver.yaml, driver.py, README.md")
+    typer.echo("Files: physical_driver.yaml, driver.py, README.md, README.zh-CN.md")
 
 
 if __name__ == "__main__":

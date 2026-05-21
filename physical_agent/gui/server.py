@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from physical_agent.agent.chat_runtime import ChatRuntime
+from physical_agent.agent.onboarding import HardwareIntegrationAssistant
 from physical_agent.agent.runtime import AgentRuntime
 from physical_agent.config import DEFAULT_CONFIG_NAME, load_config, write_default_config
 from physical_agent.doctor import doctor_ok, run_doctor
@@ -128,6 +129,32 @@ class GuiController:
                 "state": self.state(),
             }
 
+    def integrate_hardware(
+        self,
+        source: str,
+        *,
+        output: str | None = None,
+        name: str | None = None,
+    ) -> dict[str, Any]:
+        with self.lock:
+            if not self.config_path.exists():
+                write_default_config(self.config_path)
+            config = load_config(self.config_path)
+            Workspace(config.workspace_path(self.config_path.parent)).initialize()
+            assistant = HardwareIntegrationAssistant(
+                source,
+                output_dir=output or None,
+                name=name or None,
+                base_dir=self.config_path.parent,
+            )
+            result = assistant.generate()
+            return {
+                "ok": True,
+                "message": f"Generated driver scaffold at {result.output_path}.",
+                "result": _json_safe(result.model_dump(mode="json")),
+                "state": self.state(),
+            }
+
     def run_demo(self) -> dict[str, Any]:
         with self.lock:
             self._ensure_watch_started()
@@ -225,6 +252,21 @@ def make_server(
                     auto_step = bool(payload.get("auto_step", False))
                     self._send_json(
                         controller.chat_message(message, planner=planner, auto_step=auto_step)
+                    )
+                    return
+                if route == "/api/integrate":
+                    payload = self._read_json()
+                    source = str(payload.get("source", "")).strip()
+                    if not source:
+                        self._send_json(
+                            {"ok": False, "message": "Source cannot be empty."},
+                            HTTPStatus.BAD_REQUEST,
+                        )
+                        return
+                    output = str(payload.get("output", "")).strip() or None
+                    name = str(payload.get("name", "")).strip() or None
+                    self._send_json(
+                        controller.integrate_hardware(source, output=output, name=name)
                     )
                     return
                 if route == "/api/demo":
@@ -371,6 +413,14 @@ INDEX_HTML = r"""<!doctype html>
     button.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
     button.success { background: var(--green); border-color: var(--green); color: #fff; }
     select { padding: 0 8px; min-width: 136px; }
+    input[type="text"] {
+      width: 100%;
+      min-height: 36px;
+      border: 1px solid #b8c1d1;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+    }
     textarea {
       width: 100%;
       min-height: 96px;
@@ -513,6 +563,16 @@ INDEX_HTML = r"""<!doctype html>
         </div>
         <p id="last-message"></p>
       </section>
+
+      <section class="stack">
+        <h2 data-i18n="integrateTitle">Hardware integration</h2>
+        <input id="integrate-source" type="text" data-i18n-placeholder="integrateSourcePlaceholder" placeholder="./vendor_sdk or https://github.com/org/repo">
+        <div class="grid-2">
+          <input id="integrate-name" type="text" data-i18n-placeholder="integrateNamePlaceholder" placeholder="optional_driver_name">
+          <button id="integrate" data-i18n="integrateButton">Generate driver</button>
+        </div>
+        <p data-i18n="integrateHint">Generates a watch-side driver scaffold; it does not execute hardware.</p>
+      </section>
     </div>
 
     <div class="stack">
@@ -591,6 +651,12 @@ INDEX_HTML = r"""<!doctype html>
         runningDemo: "Running demo",
         refreshing: "Refreshing",
         sendingChat: "Sending",
+        integrateTitle: "Hardware integration",
+        integrateSourcePlaceholder: "./vendor_sdk or https://github.com/org/repo",
+        integrateNamePlaceholder: "optional_driver_name",
+        integrateButton: "Generate driver",
+        integrateHint: "Generates a watch-side driver scaffold; it does not execute hardware.",
+        integrating: "Generating driver",
         done: "Done"
       },
       zh: {
@@ -639,6 +705,12 @@ INDEX_HTML = r"""<!doctype html>
         runningDemo: "正在运行演示",
         refreshing: "正在刷新",
         sendingChat: "正在发送",
+        integrateTitle: "硬件接入",
+        integrateSourcePlaceholder: "./vendor_sdk 或 https://github.com/org/repo",
+        integrateNamePlaceholder: "可选驱动名",
+        integrateButton: "生成驱动",
+        integrateHint: "只生成 watch 侧 driver 脚手架，不会执行硬件动作。",
+        integrating: "正在生成驱动",
         done: "完成"
       }
     };
@@ -662,7 +734,10 @@ INDEX_HTML = r"""<!doctype html>
       chatInput: document.querySelector("#chat-input"),
       chatPlanner: document.querySelector("#chat-planner"),
       chatAutoStep: document.querySelector("#chat-auto-step"),
-      sendChat: document.querySelector("#send-chat")
+      sendChat: document.querySelector("#send-chat"),
+      integrateSource: document.querySelector("#integrate-source"),
+      integrateName: document.querySelector("#integrate-name"),
+      integrate: document.querySelector("#integrate")
     };
 
     const savedLang = localStorage.getItem("physical-agent-lang");
@@ -825,6 +900,10 @@ INDEX_HTML = r"""<!doctype html>
       message: els.chatInput.value,
       planner: els.chatPlanner.value,
       auto_step: els.chatAutoStep.checked
+    })));
+    els.integrate.addEventListener("click", () => run("integrating", () => post("/api/integrate", {
+      source: els.integrateSource.value,
+      name: els.integrateName.value
     })));
 
     setLanguage(lang);

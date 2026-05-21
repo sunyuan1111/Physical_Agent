@@ -11,7 +11,7 @@ from typing import Any
 from physical_agent.env import load_dotenv
 
 
-DEFAULT_MODEL = "gpt-4o-mini"
+DEFAULT_MODEL = "gpt-5.4"
 
 
 class OpenAICompatibleError(RuntimeError):
@@ -163,4 +163,3 @@ def _short_error(body: str, *, limit: int = 500) -> str:
     if len(compact) > limit:
         return compact[: limit - 3] + "..."
     return compact
-

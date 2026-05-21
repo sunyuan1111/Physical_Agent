@@ -83,3 +83,31 @@ def test_gui_http_chat_endpoint(tmp_path):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_gui_http_integrate_endpoint(tmp_path):
+    sdk = tmp_path / "vendor_sdk"
+    sdk.mkdir()
+    (sdk / "README.md").write_text(
+        "# Demo Voice Device\n\nHTTP SDK with voice, speak, tts, light and RGB support.",
+        encoding="utf-8",
+    )
+    server = make_server(tmp_path / "physical-agent.yaml", port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        result = _request(
+            f"{base_url}/api/integrate",
+            method="POST",
+            payload={"source": str(sdk), "name": "voice_light_driver"},
+        )
+        output_path = result["result"]["output_path"]
+        assert result["ok"] is True
+        assert "physical-agent-integration" in output_path
+        assert result["result"]["source"]["transport"] == "http"
+        assert result["result"]["source"]["robot_kind"] == "audio_device"
+        assert result["state"]["ready"] is True
+    finally:
+        server.shutdown()
+        server.server_close()

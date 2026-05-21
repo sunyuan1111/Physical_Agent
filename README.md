@@ -240,7 +240,7 @@ After quickstart works:
 1. To understand communication, inspect `workspace/*.md`.
 2. To understand hardware onboarding, read the "Driver Contract" section.
 3. To see a Xiaozhi MCP bridge example, read `docs/xiaozhi-driver-tutorial.zh-CN.md`.
-4. To start a new hardware adapter, run `physical-agent driver new my_driver`.
+4. To start from an SDK or GitHub repo, run `physical-agent integrate ./vendor_sdk`.
 
 ## Local GUI
 
@@ -254,6 +254,7 @@ The console provides:
 - one-step action execution
 - multi-turn chat
 - English and Chinese UI switching
+- hardware integration scaffold generation
 - task submission
 - pick/place quick demo
 - doctor checks
@@ -272,6 +273,8 @@ Run without opening a browser automatically:
 ```bash
 physical-agent gui --no-open
 ```
+
+The Hardware integration panel accepts a local SDK path, a GitHub repository URL, or an importable Python package name. It generates a watch-side driver scaffold and integration notes; it does not execute hardware from the browser.
 
 ## Markdown Workspace Protocol
 
@@ -340,6 +343,27 @@ Create a new local driver scaffold:
 ```bash
 physical-agent driver new my_arm_driver
 ```
+
+If your teammate already has a GitHub repo, local SDK checkout, or mature Python package, let Physical Agent create the first integration draft:
+
+```bash
+physical-agent integrate ./vendor_sdk --name my_device_driver
+physical-agent integrate https://github.com/org/device-sdk --name my_device_driver
+physical-agent chat --message "帮我接入 ./vendor_sdk"
+```
+
+The integration assistant scans docs and project metadata, infers a transport such as serial, HTTP, WebSocket, MQTT, gRPC, MCP, or SDK, then generates:
+
+```text
+physical-agent-integration/my_device_driver/
+  physical_driver.yaml
+  driver.py
+  README.md
+  README.zh-CN.md
+  integration-report.md
+```
+
+The generated driver stays in mock mode first. A human engineer still needs to replace the TODO branches in `driver.py` with the real SDK calls and add focused tests for the hardware. The agent can help write that code, but the runtime boundary stays the same: the generated driver is loaded only by watch, and actions still go through `ACTIONS.md`, safety validation, and `driver.execute(action)`.
 
 For a hardware onboarding example based on a Xiaozhi MCP bridge, see:
 
@@ -423,7 +447,7 @@ Create a local `.env` file. It is ignored by git.
 ```bash
 GPT_URL=https://your-provider.example/v1
 GPT_KEY=your_api_key
-GPT_MODEL=gpt-4o-mini
+GPT_MODEL=gpt-5.4
 ```
 
 Supported variable names:
@@ -498,7 +522,7 @@ You can also make LLM planning the project default by editing `physical-agent.ya
 ```yaml
 agent:
   planner: llm
-  model: gpt-4o-mini
+  model: gpt-5.4
 ```
 
 ## Clean-Room Implementation
@@ -513,6 +537,6 @@ Run the full test suite:
 pytest -q
 ```
 
-Current coverage includes Markdown protocol parsing/rendering, workspace lifecycle, driver manifest and loader behavior, safety validation, mock drivers, rule-based planning, watch runtime stepping, the end-to-end Markdown loop, one-command setup, doctor checks, and GUI HTTP endpoints.
+Current coverage includes Markdown protocol parsing/rendering, workspace lifecycle, driver manifest and loader behavior, hardware onboarding scaffold generation, safety validation, mock drivers, rule-based planning, watch runtime stepping, the end-to-end Markdown loop, one-command setup, doctor checks, and GUI HTTP endpoints.
 
 It also covers the chat protocol, chat memory, chat action proposals, chat auto-step execution, and the GUI chat endpoint.

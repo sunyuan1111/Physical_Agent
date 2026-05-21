@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from physical_agent.agent.llm_planner import _json_safe, _normalize_depends_on
+from physical_agent.agent.onboarding import HardwareIntegrationAssistant
 from physical_agent.agent.rule_based import RuleBasedPlanner
 from physical_agent.config import DEFAULT_CONFIG_NAME, PhysicalAgentConfig, load_config, write_default_config
 from physical_agent.llm import OpenAICompatibleClient, OpenAICompatibleSettings
@@ -42,6 +43,43 @@ class ChatRuntime:
         self.setup()
         workspace = self._workspace()
         workspace.append_chat_message("user", message)
+
+        if self._looks_like_integration_request(message):
+            response = self._respond_with_integration(message)
+            actions: list[Action] = []
+            notes: list[str] = []
+            executed = 0
+            plan = ChatPlan(
+                status="answered",
+                intent="integrate",
+                summary=response["reply"],
+                steps=response.get("steps", []),
+                actions=[],
+                needs_watch=False,
+            )
+            workspace.write_plan(plan)
+            assistant = workspace.append_chat_message(
+                "assistant",
+                response["reply"],
+                metadata={
+                    "intent": plan.intent,
+                    "integration": response.get("integration", {}),
+                    "needs_watch": False,
+                    "executed": 0,
+                },
+            )
+            workspace.append_log("Chat assistant generated an integration plan.", actor="agent")
+            return {
+                "ok": True,
+                "mode": "integration",
+                "reply": assistant.content,
+                "actions": actions,
+                "memory": notes,
+                "plan": plan.model_dump(mode="json"),
+                "executed": executed,
+                "feedback": workspace.read_feedback(),
+                "integration": response.get("integration", {}),
+            }
 
         capabilities = workspace.read_capabilities()
         world = workspace.read_world()
@@ -131,6 +169,43 @@ class ChatRuntime:
             "plan": plan.model_dump(mode="json"),
             "executed": executed,
             "feedback": feedback if auto_step else workspace.read_feedback(),
+        }
+
+    def _respond_with_integration(self, message: str) -> dict[str, Any]:
+        source = self._extract_integration_source(message)
+        if not source:
+            return {
+                "reply": (
+                    "I can help you connect a hardware repo or SDK. "
+                    "Give me a GitHub URL, a local path, or a package name, and I will generate "
+                    "a driver scaffold, README, and integration notes."
+                ),
+                "steps": [],
+                "integration": {},
+            }
+        assistant = HardwareIntegrationAssistant(source, base_dir=self.base_dir)
+        result = assistant.generate()
+        profile = result.source
+        steps = [
+            f"Source detected: {profile.source_kind}",
+            f"Transport detected: {profile.transport}",
+            f"Robot kind detected: {profile.robot_kind}",
+            f"Generated scaffold at: {result.output_path}",
+        ]
+        reply = (
+            f"I analyzed `{source}` and generated a Physical Agent driver scaffold at "
+            f"`{result.output_path}`. "
+            f"It detected `{profile.robot_kind}` over `{profile.transport}` and found "
+            f"{len(profile.capabilities)} capability template(s)."
+        )
+        return {
+            "reply": reply,
+            "steps": steps,
+            "integration": {
+                "source": profile.model_dump(mode="json"),
+                "output_path": str(result.output_path),
+                "generated_files": result.generated_files,
+            },
         }
 
     def history(self) -> list[ChatMessage]:
@@ -301,6 +376,49 @@ class ChatRuntime:
         if mode in {"llm", "openai", "openai_compatible", "openai-compatible"}:
             return "llm"
         return "rule_based"
+
+    def _looks_like_integration_request(self, message: str) -> bool:
+        text = message.lower()
+        has_source = bool(self._extract_integration_source(message))
+        direct_phrases = (
+            "integrate",
+            "onboard",
+            "connect this hardware",
+            "hardware repo",
+            "github",
+            "sdk",
+            "接入",
+            "适配",
+            "仓库",
+            "驱动",
+            "硬件",
+        )
+        if has_source and any(phrase in text for phrase in direct_phrases):
+            return True
+        return any(
+            phrase in text
+            for phrase in (
+                "generate a driver",
+                "create a driver",
+                "new hardware driver",
+                "帮我接入",
+                "帮我适配",
+                "生成驱动",
+                "接入硬件",
+            )
+        )
+
+    def _extract_integration_source(self, message: str) -> str | None:
+        url_match = re.search(r"(https?://[^\s]+github\.com/[^\s]+|git@github\.com:[^\s]+)", message, re.IGNORECASE)
+        if url_match:
+            return url_match.group(1).rstrip(".,)")
+        path_match = re.search(r"(?:(?:[A-Za-z]:[\\/])|(?:\./)|(?:\.\\/)|(?:~/)|(?:/))[^\s]+", message)
+        if path_match:
+            return path_match.group(0).rstrip(".,)")
+        package_match = re.search(r"(?:package|sdk|repo|仓库|项目|路径)\s*[:：]?\s*([A-Za-z0-9_.-]+)", message, re.IGNORECASE)
+        if package_match:
+            return package_match.group(1).strip()
+        return None
 
     def _llm_client(self) -> OpenAICompatibleClient:
         if self.llm_client is None:
