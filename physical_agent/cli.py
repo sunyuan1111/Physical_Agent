@@ -8,6 +8,7 @@ import typer
 import yaml
 
 from physical_agent.agent.chat_runtime import ChatRuntime
+from physical_agent.agent.driver_coder import DriverCodingAgent
 from physical_agent.agent.onboarding import HardwareIntegrationAssistant
 from physical_agent.agent.runtime import AgentRuntime
 from physical_agent.config import DEFAULT_CONFIG_NAME, load_config, write_default_config
@@ -249,7 +250,35 @@ def integrate(
         help="Target driver directory. Default: ./physical-agent-integration/<driver-name>.",
     ),
     name: Optional[str] = typer.Option(None, "--name", help="Override the generated driver name."),
+    llm: bool = typer.Option(False, "--llm", help="Use the configured LLM to draft driver.py from SDK context."),
+    model: Optional[str] = typer.Option(None, "--model", help="LLM model override for --llm."),
 ) -> None:
+    if llm:
+        result = DriverCodingAgent(
+            source,
+            output_dir=output,
+            name=name,
+            base_dir=config.resolve().parent,
+            model=model,
+        ).generate()
+        typer.echo("Physical Agent LLM driver coding completed.")
+        typer.echo(f"Source: {result.integration.source.source}")
+        typer.echo(f"Output: {result.output_path}")
+        typer.echo(f"LLM used: {result.llm_used}")
+        if result.llm_error:
+            typer.echo(f"LLM note: {result.llm_error}")
+        typer.echo(f"Summary: {result.summary}")
+        typer.echo("Validation:")
+        typer.echo(yaml.safe_dump(result.validation, sort_keys=False).strip())
+        typer.echo("Generated files:")
+        for file_path in result.generated_files:
+            typer.echo(f"- {file_path}")
+        if result.next_steps:
+            typer.echo("\nNext steps:")
+            for step in result.next_steps:
+                typer.echo(f"- {step}")
+        return
+
     assistant = HardwareIntegrationAssistant(
         source,
         output_dir=output,

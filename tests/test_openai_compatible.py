@@ -58,6 +58,25 @@ def test_load_dotenv_sets_gpt_env_names(tmp_path, monkeypatch):
     assert loaded["GPT_KEY"] == "secret"
 
 
+def test_openai_settings_prefers_project_env_file(tmp_path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "GPT_URL=http://project.test/v1\n"
+        "GPT_KEY=project-key\n"
+        "GPT_MODEL=project-model\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GPT_URL", "http://global.test/v1")
+    monkeypatch.setenv("GPT_KEY", "global-key")
+    monkeypatch.setenv("GPT_MODEL", "global-model")
+
+    settings = OpenAICompatibleSettings.from_env(env_file=env_file)
+
+    assert settings.base_url == "http://project.test/v1"
+    assert settings.api_key == "project-key"
+    assert settings.model == "project-model"
+
+
 def test_openai_compatible_client_posts_chat_completion():
     server = _server()
     try:

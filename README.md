@@ -254,7 +254,7 @@ The console provides:
 - one-step action execution
 - multi-turn chat
 - English and Chinese UI switching
-- hardware integration scaffold generation
+- hardware integration scaffold and LLM driver draft generation
 - task submission
 - pick/place quick demo
 - doctor checks
@@ -274,7 +274,7 @@ Run without opening a browser automatically:
 physical-agent gui --no-open
 ```
 
-The Hardware integration panel accepts a local SDK path, a GitHub repository URL, or an importable Python package name. It generates a watch-side driver scaffold and integration notes; it does not execute hardware from the browser.
+The Hardware integration panel accepts a local SDK path, a GitHub repository URL, or an importable Python package name. Choose `Scaffold` for a deterministic watch-side driver template, or `LLM draft` to let the configured OpenAI-compatible model read SDK context and update `driver.py`. Both modes keep hardware execution outside the browser; the LLM draft is validated in mock mode before it is written back.
 
 ## Markdown Workspace Protocol
 
@@ -344,7 +344,7 @@ Create a new local driver scaffold:
 physical-agent driver new my_arm_driver
 ```
 
-If a hardware project already has a GitHub repo, local SDK checkout, or mature Python package, let Physical Agent create the first integration draft:
+If a hardware project already has a GitHub repo, local SDK checkout, or mature Python package, let Physical Agent create the first integration draft. By default, `integrate` is deterministic scaffold mode:
 
 ```bash
 physical-agent integrate ./vendor_sdk --name my_device_driver
@@ -352,18 +352,20 @@ physical-agent integrate https://github.com/org/device-sdk --name my_device_driv
 physical-agent chat --message "帮我接入 ./vendor_sdk"
 ```
 
-The integration assistant scans docs and project metadata, infers a transport such as serial, HTTP, WebSocket, MQTT, gRPC, MCP, or SDK, then generates:
+It scans docs and project metadata, infers a transport such as serial, HTTP, WebSocket, MQTT, gRPC, MCP, or SDK, and writes `physical_driver.yaml`, `driver.py`, `README.md`, `README.zh-CN.md`, and `integration-report.md` under `physical-agent-integration/<driver-name>/`.
 
-```text
-physical-agent-integration/my_device_driver/
-  physical_driver.yaml
-  driver.py
-  README.md
-  README.zh-CN.md
-  integration-report.md
+To let an OpenAI-compatible model draft the real watch-side driver code from SDK context, enable LLM coding:
+
+```bash
+physical-agent integrate ./vendor_sdk --name my_device_driver --llm
+physical-agent integrate ./vendor_sdk --name my_device_driver --llm --model gpt-5.4
+physical-agent chat --planner llm --message "帮我接入这个 SDK ./vendor_sdk"
+physical-agent chat --message "帮我接入 ./vendor_sdk --llm"
 ```
 
-The generated driver stays in mock mode first. A human engineer still needs to replace the TODO branches in `driver.py` with the real SDK calls and add focused tests for the hardware. The agent can help write that code, but the runtime boundary stays the same: the generated driver is loaded only by watch, and actions still go through `ACTIONS.md`, safety validation, and `driver.execute(action)`.
+LLM driver coding uses the same `.env` settings as chat and planning. It first creates the safe scaffold, then sends SDK snippets plus the scaffold to the model, accepts only a small allowlist of generated files, validates the candidate in mock mode, and writes `llm-coding-report.md`. If the API fails or the draft does not validate, the safe scaffold remains in place.
+
+The generated driver stays in mock mode first. When LLM coding is enabled, Physical Agent can draft the SDK calls, but the runtime boundary stays the same: the generated driver is loaded only by watch, and actions still go through `ACTIONS.md`, safety validation, and `driver.execute(action)`. The LLM does not execute hardware.
 
 For a hardware onboarding example based on a Xiaozhi MCP bridge, see:
 

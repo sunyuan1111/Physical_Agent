@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from physical_agent.agent.chat_runtime import ChatRuntime
+from physical_agent.agent.driver_coder import DriverCodingAgent
 from physical_agent.agent.onboarding import HardwareIntegrationAssistant
 from physical_agent.agent.runtime import AgentRuntime
 from physical_agent.config import DEFAULT_CONFIG_NAME, load_config, write_default_config
@@ -135,12 +136,33 @@ class GuiController:
         *,
         output: str | None = None,
         name: str | None = None,
+        llm: bool = False,
+        model: str | None = None,
     ) -> dict[str, Any]:
         with self.lock:
             if not self.config_path.exists():
                 write_default_config(self.config_path)
             config = load_config(self.config_path)
             Workspace(config.workspace_path(self.config_path.parent)).initialize()
+            if llm:
+                result = DriverCodingAgent(
+                    source,
+                    output_dir=output or None,
+                    name=name or None,
+                    base_dir=self.config_path.parent,
+                    model=model or None,
+                ).generate()
+                message = (
+                    f"Generated LLM driver draft at {result.output_path}."
+                    if result.llm_used
+                    else f"Generated safe scaffold at {result.output_path}; LLM coding did not validate."
+                )
+                return {
+                    "ok": True,
+                    "message": message,
+                    "result": _json_safe(result.model_dump(mode="json")),
+                    "state": self.state(),
+                }
             assistant = HardwareIntegrationAssistant(
                 source,
                 output_dir=output or None,
@@ -265,8 +287,16 @@ def make_server(
                         return
                     output = str(payload.get("output", "")).strip() or None
                     name = str(payload.get("name", "")).strip() or None
+                    llm = bool(payload.get("llm", False))
+                    model = str(payload.get("model", "")).strip() or None
                     self._send_json(
-                        controller.integrate_hardware(source, output=output, name=name)
+                        controller.integrate_hardware(
+                            source,
+                            output=output,
+                            name=name,
+                            llm=llm,
+                            model=model,
+                        )
                     )
                     return
                 if route == "/api/demo":
@@ -569,9 +599,16 @@ INDEX_HTML = r"""<!doctype html>
         <input id="integrate-source" type="text" data-i18n-placeholder="integrateSourcePlaceholder" placeholder="./vendor_sdk or https://github.com/org/repo">
         <div class="grid-2">
           <input id="integrate-name" type="text" data-i18n-placeholder="integrateNamePlaceholder" placeholder="optional_driver_name">
+          <input id="integrate-model" type="text" data-i18n-placeholder="integrateModelPlaceholder" placeholder="optional model override">
+        </div>
+        <div class="row">
+          <select id="integrate-mode" aria-label="Integration mode">
+            <option value="scaffold" data-i18n="integrateModeScaffold">Scaffold</option>
+            <option value="llm" data-i18n="integrateModeLlm">LLM draft</option>
+          </select>
           <button id="integrate" data-i18n="integrateButton">Generate driver</button>
         </div>
-        <p data-i18n="integrateHint">Generates a watch-side driver scaffold; it does not execute hardware.</p>
+        <p data-i18n="integrateHint">Scaffold mode writes a safe watch-side driver template. LLM draft mode reads SDK context, proposes driver.py, validates it in mock mode, and never executes hardware from the browser.</p>
       </section>
     </div>
 
@@ -654,8 +691,11 @@ INDEX_HTML = r"""<!doctype html>
         integrateTitle: "Hardware integration",
         integrateSourcePlaceholder: "./vendor_sdk or https://github.com/org/repo",
         integrateNamePlaceholder: "optional_driver_name",
+        integrateModelPlaceholder: "optional model override",
+        integrateModeScaffold: "Scaffold",
+        integrateModeLlm: "LLM draft",
         integrateButton: "Generate driver",
-        integrateHint: "Generates a watch-side driver scaffold; it does not execute hardware.",
+        integrateHint: "Scaffold mode writes a safe watch-side driver template. LLM draft mode reads SDK context, proposes driver.py, validates it in mock mode, and never executes hardware from the browser.",
         integrating: "Generating driver",
         done: "Done"
       },
@@ -708,8 +748,11 @@ INDEX_HTML = r"""<!doctype html>
         integrateTitle: "硬件接入",
         integrateSourcePlaceholder: "./vendor_sdk 或 https://github.com/org/repo",
         integrateNamePlaceholder: "可选驱动名",
+        integrateModelPlaceholder: "可选模型覆盖",
+        integrateModeScaffold: "脚手架",
+        integrateModeLlm: "LLM 草稿",
         integrateButton: "生成驱动",
-        integrateHint: "只生成 watch 侧 driver 脚手架，不会执行硬件动作。",
+        integrateHint: "脚手架模式生成安全的 watch 侧 driver 模板。LLM 草稿模式会读取 SDK 上下文、编写 driver.py、用 mock 模式验证，并且不会从浏览器执行硬件动作。",
         integrating: "正在生成驱动",
         done: "完成"
       }
@@ -737,6 +780,8 @@ INDEX_HTML = r"""<!doctype html>
       sendChat: document.querySelector("#send-chat"),
       integrateSource: document.querySelector("#integrate-source"),
       integrateName: document.querySelector("#integrate-name"),
+      integrateModel: document.querySelector("#integrate-model"),
+      integrateMode: document.querySelector("#integrate-mode"),
       integrate: document.querySelector("#integrate")
     };
 
@@ -903,7 +948,9 @@ INDEX_HTML = r"""<!doctype html>
     })));
     els.integrate.addEventListener("click", () => run("integrating", () => post("/api/integrate", {
       source: els.integrateSource.value,
-      name: els.integrateName.value
+      name: els.integrateName.value,
+      model: els.integrateModel.value,
+      llm: els.integrateMode.value === "llm"
     })));
 
     setLanguage(lang);

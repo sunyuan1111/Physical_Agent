@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from physical_agent.agent.driver_coder import DriverCodingAgent
 from physical_agent.agent.llm_planner import _json_safe, _normalize_depends_on
 from physical_agent.agent.onboarding import HardwareIntegrationAssistant
 from physical_agent.agent.rule_based import RuleBasedPlanner
@@ -183,6 +184,43 @@ class ChatRuntime:
                 "steps": [],
                 "integration": {},
             }
+        use_llm = self._integration_request_wants_llm(message) or self._mode() == "llm"
+        if use_llm:
+            coding_result = DriverCodingAgent(
+                source,
+                base_dir=self.base_dir,
+                model=self.model,
+            ).generate()
+            result = coding_result.integration
+            profile = result.source
+            steps = [
+                f"Source detected: {profile.source_kind}",
+                f"Transport detected: {profile.transport}",
+                f"Robot kind detected: {profile.robot_kind}",
+                f"Generated scaffold at: {coding_result.output_path}",
+                f"LLM driver coding used: {coding_result.llm_used}",
+            ]
+            reply = (
+                f"I analyzed `{source}` and generated a Physical Agent driver draft at "
+                f"`{coding_result.output_path}`. "
+                f"LLM coding {'updated the driver' if coding_result.llm_used else 'fell back to the safe scaffold'}; "
+                f"validation status is `{coding_result.validation.get('ok')}`."
+            )
+            return {
+                "reply": reply,
+                "steps": steps,
+                "integration": {
+                    "source": profile.model_dump(mode="json"),
+                    "output_path": str(coding_result.output_path),
+                    "generated_files": coding_result.generated_files,
+                    "llm_used": coding_result.llm_used,
+                    "llm_error": coding_result.llm_error,
+                    "summary": coding_result.summary,
+                    "validation": coding_result.validation,
+                    "next_steps": coding_result.next_steps,
+                },
+            }
+
         assistant = HardwareIntegrationAssistant(source, base_dir=self.base_dir)
         result = assistant.generate()
         profile = result.source
@@ -405,6 +443,29 @@ class ChatRuntime:
                 "帮我适配",
                 "生成驱动",
                 "接入硬件",
+            )
+        )
+
+    def _integration_request_wants_llm(self, message: str) -> bool:
+        text = message.lower()
+        return any(
+            phrase in text
+            for phrase in (
+                "--llm",
+                "llm",
+                "write the driver",
+                "implement the driver",
+                "real sdk",
+                "complete driver",
+                "自动实现",
+                "真实sdk",
+                "真实 sdk",
+                "实现driver",
+                "实现 driver",
+                "写完整",
+                "生成完整",
+                "接入sdk",
+                "接入 sdk",
             )
         )
 

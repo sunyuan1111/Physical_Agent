@@ -1,8 +1,86 @@
 import json
 import threading
 import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 from physical_agent.gui import make_server
+from physical_agent.quickstart import setup_project
+
+
+def _driver_coding_payload() -> str:
+    driver_py = '''
+from physical_agent.drivers import (
+    Action,
+    ActionResult,
+    Capability,
+    DriverContext,
+    HealthStatus,
+    Observation,
+    PhysicalDriver,
+)
+
+
+class GuiDriver(PhysicalDriver):
+    def __init__(self, context: DriverContext):
+        super().__init__(context)
+        self.connected = False
+
+    async def connect(self) -> None:
+        self.connected = True
+
+    async def disconnect(self) -> None:
+        self.connected = False
+
+    async def health(self) -> HealthStatus:
+        return HealthStatus(ok=self.connected, message="connected")
+
+    async def observe(self) -> Observation:
+        return Observation(summary="GUI LLM generated driver is connected.", robots={self.context.robot_id: {"status": "idle"}})
+
+    def capabilities(self) -> list[Capability]:
+        return [
+            Capability(
+                name="observe",
+                description="Observe the device.",
+                params_schema={"type": "object", "properties": {}, "additionalProperties": False},
+            )
+        ]
+
+    async def execute(self, action: Action) -> ActionResult:
+        if action.capability == "observe":
+            observation = await self.observe()
+            return ActionResult(status="completed", message="Observed.", result={"observation": observation.model_dump(mode="json")})
+        return ActionResult(status="failed", message=f"Unsupported capability: {action.capability}")
+'''
+    return json.dumps(
+        {
+            "summary": "Generated a GUI mock-safe driver.",
+            "files": [{"path": "driver.py", "content": driver_py}],
+            "next_steps": ["Wire the real SDK in hardware mode."],
+            "tests": ["Load the generated driver and execute observe."],
+        }
+    )
+
+
+class _FakeOpenAIHandler(BaseHTTPRequestHandler):
+    requests = []
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        self.__class__.requests.append(payload)
+        body = json.dumps(
+            {"choices": [{"message": {"role": "assistant", "content": _driver_coding_payload()}}]}
+        ).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):
+        return
 
 
 def _request(url: str, *, method: str = "GET", payload: dict | None = None) -> dict:
@@ -111,3 +189,75 @@ def test_gui_http_integrate_endpoint(tmp_path):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_gui_http_integrate_endpoint_can_use_llm(tmp_path):
+    import os
+
+    sdk = tmp_path / "vendor_sdk"
+    sdk.mkdir()
+    (sdk / "README.md").write_text(
+        "# Demo GUI Device\n\nPython SDK with observe support.",
+        encoding="utf-8",
+    )
+    _FakeOpenAIHandler.requests = []
+    previous_env = {key: os.environ.get(key) for key in _LLM_ENV_KEYS}
+    for key in _LLM_ENV_KEYS:
+        os.environ.pop(key, None)
+    fake_llm = ThreadingHTTPServer(("127.0.0.1", 0), _FakeOpenAIHandler)
+    fake_thread = threading.Thread(target=fake_llm.serve_forever, daemon=True)
+    fake_thread.start()
+    config_path = tmp_path / "physical-agent.yaml"
+    setup_project(config_path, publish=False)
+    (tmp_path / ".env").write_text(
+        f"GPT_URL=http://127.0.0.1:{fake_llm.server_address[1]}/v1\n"
+        "GPT_KEY=test-key\n"
+        "GPT_MODEL=test-model\n",
+        encoding="utf-8",
+    )
+    server = make_server(config_path, port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        result = _request(
+            f"{base_url}/api/integrate",
+            method="POST",
+            payload={
+                "source": str(sdk),
+                "name": "gui_driver",
+                "llm": True,
+                "model": "override-model",
+            },
+        )
+        output_path = result["result"]["output_path"]
+
+        assert result["ok"] is True
+        assert result["result"]["llm_used"] is True
+        assert _FakeOpenAIHandler.requests[-1]["model"] == "override-model"
+        assert "GUI LLM generated driver" in (Path(output_path) / "driver.py").read_text(
+            encoding="utf-8"
+        )
+    finally:
+        for key, value in previous_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        server.shutdown()
+        server.server_close()
+        fake_llm.shutdown()
+        fake_llm.server_close()
+
+
+_LLM_ENV_KEYS = (
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENAI_MODEL",
+    "GPT_KEY",
+    "GPT_URL",
+    "GPT_MODEL",
+    "API_KEY",
+    "BASE_URL",
+    "MODEL",
+)

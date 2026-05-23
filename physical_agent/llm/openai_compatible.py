@@ -33,7 +33,7 @@ class OpenAICompatibleSettings:
         model: str | None = None,
         timeout_s: int = 60,
     ) -> "OpenAICompatibleSettings":
-        load_dotenv(env_file)
+        load_dotenv(env_file, override=True)
         api_key = (
             os.getenv("OPENAI_API_KEY")
             or os.getenv("GPT_KEY")

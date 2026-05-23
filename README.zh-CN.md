@@ -4,7 +4,7 @@
 
 Physical Agent is a Markdown-native runtime for safe physical-world agents.
 
-Physical Agent 是一个面向安全物理世界 agent 的 Markdown 原生运行时。第一版的重点不是堆很多功能，而是把认知侧 agent、物理侧 watch、driver 接入协议和安全边界拆清楚。
+Physical Agent 是一个面向安全物理世界 agent 的 Markdown 原生运行时。v1 的重点不是堆功能，而是把认知侧 agent、物理侧 watch、driver 接入协议和安全边界拆清楚。
 
 核心原则：
 
@@ -12,7 +12,7 @@ Physical Agent 是一个面向安全物理世界 agent 的 Markdown 原生运行
 Agent can propose actions. Watch decides whether and how they touch the physical world.
 ```
 
-也就是说：agent 可以提出动作意图，但只有 watch 进程可以决定这些动作是否以及如何触达真实物理世界。
+也就是说，agent 可以提出动作意图，但只有 watch 进程可以决定这些动作是否以及如何触达真实物理世界。
 
 ## 核心架构
 
@@ -43,7 +43,7 @@ Workspace: Markdown files are the protocol between cognition and execution.
 硬边界：
 
 - agent 不导入 driver
-- agent 不调用硬件 SDK
+- agent 不直接调用硬件 SDK
 - driver 不解析 Markdown
 - driver 不调用 agent runtime
 - watch 是唯一执行物理动作的路径
@@ -106,7 +106,8 @@ GUI 里可以做这些事：
 - 使用 chat agent 对话
 - 切换 English / 中文
 - 查看 robots、world、actions、feedback
-- 输入 SDK 路径或 GitHub 仓库生成硬件 driver 脚手架
+- 输入 SDK 路径、GitHub 仓库或 Python 包名生成硬件 driver
+- 选择“脚手架”或“LLM 草稿”硬件接入模式
 
 如果不想自动打开浏览器：
 
@@ -211,7 +212,7 @@ robots:
 
 ## 硬件接入助手
 
-如果一个硬件项目已经有 GitHub 仓库、本地 SDK checkout，或者成熟 Python 包，可以让 Physical Agent 先生成第一版接入脚手架：
+如果一个硬件项目已经有 GitHub 仓库、本地 SDK checkout，或者成熟 Python 包，Physical Agent 可以先生成 watch 侧接入草稿。默认的 `integrate` 是确定性的脚手架模式：
 
 ```bash
 physical-agent integrate ./vendor_sdk --name my_device_driver
@@ -219,31 +220,30 @@ physical-agent integrate https://github.com/org/device-sdk --name my_device_driv
 physical-agent chat --message "帮我接入 ./vendor_sdk"
 ```
 
-GUI 里也有 “硬件接入” 区域，输入本地路径、GitHub URL 或 Python 包名后点击“生成驱动”即可。
-
-接入助手会扫描 README、`pyproject.toml`、`package.json` 和文本源码，推断：
-
-- source kind：本地路径、GitHub repo 或 Python package
-- transport：serial、HTTP、WebSocket、MQTT、gRPC、MCP、SDK 或 generic
-- robot kind：arm、rover、camera、audio device 等
-- 初始 capability 列表
-- config schema
-- 下一步人工完善建议
-
-默认输出：
+脚手架模式会扫描 README、`pyproject.toml`、`package.json` 和文本源码，推断 source kind、transport、robot kind、capability 列表和 config schema，然后在 `physical-agent-integration/<driver-name>/` 下写入：
 
 ```text
-physical-agent-integration/my_device_driver/
-  physical_driver.yaml
-  driver.py
-  README.md
-  README.zh-CN.md
-  integration-report.md
+physical_driver.yaml
+driver.py
+README.md
+README.zh-CN.md
+integration-report.md
 ```
 
-生成的 driver 默认先保持 `mode: mock` 可运行。工程师需要把 `driver.py` 里的 TODO 分支替换成真实 SDK 或服务调用，并为每个保留的 capability 增加聚焦测试。
+如果希望让 OpenAI 兼容模型读取 SDK 上下文，并尝试把真实 SDK 调用写进 watch 侧 `driver.py`，启用 LLM coding：
 
-这不是让 agent 绕过安全边界。接入助手只帮助写 watch 侧 driver 草稿和文档；真正执行时仍然必须经过：
+```bash
+physical-agent integrate ./vendor_sdk --name my_device_driver --llm
+physical-agent integrate ./vendor_sdk --name my_device_driver --llm --model gpt-5.4
+physical-agent chat --planner llm --message "帮我接入这个 SDK ./vendor_sdk"
+physical-agent chat --message "帮我接入 ./vendor_sdk --llm"
+```
+
+GUI 的“硬件接入”区域也支持同样能力：选择“脚手架”会生成安全模板；选择“LLM 草稿”会读取 SDK 上下文、让模型更新 `driver.py`，并在 mock 模式下验证候选 driver。模型名可以在 GUI 输入框里临时覆盖，也可以通过 `.env` 的 `GPT_MODEL` / `OPENAI_MODEL` 设置。
+
+LLM coding 会先生成安全脚手架，再把 SDK 片段和脚手架发给模型；它只接受少量允许文件的更新，例如 `driver.py`、`physical_driver.yaml`、README、`integration-report.md` 和聚焦测试文件。候选 driver 必须通过 Python 编译、`load_driver`、`connect`、`health`、`observe` 和 `driver.execute(observe)` 的 mock 验证后才会写回真实输出目录。每次都会生成 `llm-coding-report.md`。如果 API 失败或草稿没有通过验证，安全脚手架会保留下来。
+
+这不代表 LLM 可以绕过安全边界。接入助手只帮助写 watch 侧 driver 草稿和文档；真正执行动作时仍然必须经过：
 
 ```text
 agent -> ACTIONS.md -> watch safety gate -> driver.execute(action)
@@ -271,51 +271,46 @@ docs/xiaozhi-driver-tutorial.zh-CN.md
 pick the red block and place it on the tray
 ```
 
-会被 rule-based planner 转换为：
-
-```text
-arm_1.pick(object_id=red_block)
-arm_1.place(target=tray)
-```
+会生成 pick + place 两个 action，并让 `red_block.location = tray`。
 
 `mock_rover` 支持：
 
 - `observe`
 - `move_to`
 
-它用于证明架构不只适用于机械臂，也可以接入其他设备。
+它证明 driver protocol 不只面向机械臂，也可以接入移动设备、相机、语音设备或桥接服务。
 
 ## Safety Gate
 
-watch 在执行任何 action 前都会检查：
+watch 在执行每个 action 前都会校验：
 
 - robot 是否存在
 - capability 是否存在
 - params 是否满足 capability JSON schema
-- capability constraints 是否被满足
-- `SAFETY.md` 是否允许执行
+- capability constraints 是否满足
+- workspace safety rules 是否允许
 - 是否需要 human approval
 - action id 是否重复执行
-- `depends_on` 是否已经 completed
+- depends_on 是否已经完成
 
-如果校验失败，watch 不会调用 driver，而是写入 `FEEDBACK.md`、追加 `LOG.md`，并将该 action 从 pending 移出。
+如果校验失败，watch 不会调用 driver。它会写入清晰的 feedback，追加日志，并把 action 从 pending 中移走。
 
 ## Rule-Based Planner
 
-默认 planner 是本地 deterministic planner，不需要 API key。
+v1 的第一个 planner 是本地、确定性的：
 
-简单映射：
+- `observe` / `look` / `scan` 生成 `observe`
+- `move` / `go` 生成 `move_to`
+- `pick` / `grasp` 生成 `pick`
+- `place` / `drop` 生成 `place`
 
-- `observe` / `look` / `scan` -> `observe`
-- `move` / `go` -> `move_to`
-- `pick` / `grasp` -> `pick`
-- `place` / `drop` -> `place`
+这样没有 API key 也能跑通完整 Markdown loop。
 
 ## OpenAI 兼容 API 和 Chat Agent
 
-Physical Agent 可以使用 OpenAI-compatible Chat Completions 接口做规划和对话，同时保持同样安全边界：LLM 只写 proposed actions，watch 仍然负责校验和执行。
+Physical Agent 可以使用 OpenAI-compatible Chat Completions 接口做规划和对话，同时保持同样安全边界：LLM 只写 proposed actions 或 watch 侧 driver 草稿，watch 仍然负责校验和执行。
 
-在项目根目录创建 `.env`，该文件已被 git 忽略：
+创建本地 `.env` 文件。它会被 git 忽略：
 
 ```bash
 GPT_URL=https://your-provider.example/v1
@@ -323,13 +318,13 @@ GPT_KEY=your_api_key
 GPT_MODEL=gpt-5.4
 ```
 
-也支持这些变量名：
+支持的变量名：
 
 - API key：`GPT_KEY` 或 `OPENAI_API_KEY`
 - Base URL：`GPT_URL` 或 `OPENAI_BASE_URL`
 - Model：`GPT_MODEL` 或 `OPENAI_MODEL`
 
-测试连通性：
+测试 API 连接：
 
 ```bash
 physical-agent llm-test
@@ -409,6 +404,7 @@ pytest -q
 - driver manifest 和 config schema 校验
 - built-in driver 与本地 driver loader
 - 硬件接入助手生成可加载 driver scaffold
+- LLM driver coding、mock 验证、CLI/chat/GUI 入口
 - safety gate 拒绝路径
 - mock arm pick/place 状态变化
 - rule-based planner
