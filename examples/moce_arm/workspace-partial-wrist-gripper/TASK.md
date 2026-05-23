@@ -2,12 +2,12 @@
 schema: physical-agent/task/v1
 owner: human
 status: active
-revision: 2
+revision: 4
 ---
 
 # Task
 
-set wrist roll to 10 degrees
+close gripper
 
 # Constraints
 

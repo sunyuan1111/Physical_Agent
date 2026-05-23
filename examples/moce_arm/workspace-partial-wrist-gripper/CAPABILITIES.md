@@ -1,7 +1,7 @@
 ---
 schema: physical-agent/capabilities/v1
 owner: watch
-revision: 6
+revision: 9
 ---
 
 # Capabilities

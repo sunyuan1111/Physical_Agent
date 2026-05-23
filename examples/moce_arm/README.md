@@ -36,7 +36,7 @@ The driver implements `PhysicalDriver` and stays on the watch side.
 ```yaml
 robots:
   momoagent_driver_1:
-    driver: ./momoagent_driver
+    driver: ./examples/moce_arm
     config:
       mode: mock
       endpoint: http://localhost:8000

@@ -5,7 +5,7 @@
 当前这套接入是针对：
 
 - 机械臂仓库：`/home/houzhinan/MomoAgent`
-- Physical Agent driver：`/home/houzhinan/Physical_Agent/Physical_Agent/physical-agent-integration/momoagent_driver`
+- Physical Agent driver：`/home/houzhinan/Physical_Agent/Physical_Agent/examples/moce_arm`
 - 当前真机模式：`partial hardware`
 - 当前已接入舵机：
   - `ID 5` -> `wrist_roll`
@@ -17,16 +17,16 @@
 ### Driver 相关
 
 - Driver 实现：
-  `~/Physical_Agent/Physical_Agent/physical-agent-integration/momoagent_driver/driver.py`
+  `~/Physical_Agent/examples/moce_arm/driver.py`
 - Driver manifest：
-  `~/Physical_Agent/Physical_Agent/physical-agent-integration/momoagent_driver/physical_driver.yaml`
+  `~/Physical_Agent/examples/moce_arm/physical_driver.yaml`
 
 ### 配置相关
 
 - Partial hardware 配置：
-  `~/Physical_Agent/Physical_Agent/physical-agent-integration/momoagent_driver/physical-agent.partial-hardware.yaml`
+  `~/Physical_Agent/examples/moce_arm/physical-agent.partial-hardware.yaml`
 - LLM `.env`：
-  `~/Physical_Agent/Physical_Agent/physical-agent-integration/momoagent_driver/.env`
+  `~/Physical_Agent/examples/moce_arm/.env`
 - MomoAgent 串口运行配置：
   `/home/houzhinan/MomoAgent/runtime/soarm_moce_serial.local.yaml`
 
@@ -71,7 +71,7 @@ workspace-partial-hardware/
 当前配置文件：
 
 ```text
-~/Physical_Agent/Physical_Agent/physical-agent-integration/momoagent_driver/physical-agent.partial-hardware.yaml
+~/Physical_Agent/examples/moce_arm/physical-agent.partial-hardware.yaml
 ```
 
 核心配置示例：
@@ -111,7 +111,7 @@ robots:
 当前自然语言 GUI/Chat 能正常工作，是因为在这个目录下放了 `.env`：
 
 ```text
-~/Physical_Agent/Physical_Agent/physical-agent-integration/momoagent_driver/.env
+~/Physical_Agent/examples/moce_arm/.env
 ```
 
 常见写法：
@@ -147,7 +147,7 @@ source .venv/bin/activate
 如果环境容易混乱，建议直接用绝对路径执行：
 
 ```bash
-~/Physical_Agent/Physical_Agent/.venv/bin/physical-agent ...
+~/Physical_Agent/.venv/bin/physical-agent ...
 ```
 
 ## 6. 串口与权限
@@ -190,13 +190,13 @@ ls -l /dev/ttyACM* /dev/ttyUSB* 2>/dev/null
 ### 7.1 启动 watch
 
 ```bash
-physical-agent watch --config physical-agent-integration/momoagent_driver/physical-agent.partial-hardware.yaml
+physical-agent watch --config examples/moce_arm/physical-agent.partial-hardware.yaml
 ```
 
 ### 7.2 查看当前状态
 
 ```bash
-physical-agent inspect --config physical-agent-integration/momoagent_driver/physical-agent.partial-hardware.yaml
+physical-agent inspect --config examples/moce_arm/physical-agent.partial-hardware.yaml
 ```
 
 ### 7.3 常用测试命令
@@ -204,31 +204,31 @@ physical-agent inspect --config physical-agent-integration/momoagent_driver/phys
 读取状态：
 
 ```bash
-physical-agent run --config physical-agent-integration/momoagent_driver/physical-agent.partial-hardware.yaml --task "observe"
+physical-agent run --config examples/moce_arm/physical-agent.partial-hardware.yaml --task "observe"
 ```
 
 打开夹爪：
 
 ```bash
-physical-agent run --config physical-agent-integration/momoagent_driver/physical-agent.partial-hardware.yaml --task "open gripper"
+physical-agent run --config examples/moce_arm/physical-agent.partial-hardware.yaml --task "open gripper"
 ```
 
 关闭夹爪：
 
 ```bash
-physical-agent run --config physical-agent-integration/momoagent_driver/physical-agent.partial-hardware.yaml --task "close gripper"
+physical-agent run --config examples/moce_arm/physical-agent.partial-hardware.yaml --task "close gripper"
 ```
 
 让 `wrist_roll` 转到某个角度：
 
 ```bash
-physical-agent run --config physical-agent-integration/momoagent_driver/physical-agent.partial-hardware.yaml --task "set wrist roll to 10 degrees"
+physical-agent run --config examples/moce_arm/physical-agent.partial-hardware.yaml --task "set wrist roll to 10 degrees"
 ```
 
 让 `wrist_roll` 增量转动：
 
 ```bash
-physical-agent run --config physical-agent-integration/momoagent_driver/physical-agent.partial-hardware.yaml --task "move wrist roll -5 degrees"
+physical-agent run --config examples/moce_arm/physical-agent.partial-hardware.yaml --task "move wrist roll -5 degrees"
 ```
 
 ## 8. GUI 运行方式
@@ -236,7 +236,7 @@ physical-agent run --config physical-agent-integration/momoagent_driver/physical
 ### 8.1 启动 GUI
 
 ```bash
-physical-agent gui --config physical-agent-integration/momoagent_driver/physical-agent.partial-hardware.yaml
+physical-agent gui --config examples/moce_arm/physical-agent.partial-hardware.yaml
 ```
 
 默认地址通常是：
@@ -350,7 +350,7 @@ groups
 cd /home/houzhinan/Physical_Agent/Physical_Agent
 source .venv/bin/activate
 sudo chmod 777 /dev/ttyACM1
-physical-agent watch --config physical-agent-integration/momoagent_driver/physical-agent.partial-hardware.yaml
+physical-agent watch --config examples/moce_arm/physical-agent.partial-hardware.yaml
 ```
 
 新开一个终端：
@@ -358,15 +358,15 @@ physical-agent watch --config physical-agent-integration/momoagent_driver/physic
 ```bash
 cd /home/houzhinan/Physical_Agent/Physical_Agent
 source .venv/bin/activate
-physical-agent run --config physical-agent-integration/momoagent_driver/physical-agent.partial-hardware.yaml --task "open gripper"
-physical-agent run --config physical-agent-integration/momoagent_driver/physical-agent.partial-hardware.yaml --task "close gripper"
-physical-agent run --config physical-agent-integration/momoagent_driver/physical-agent.partial-hardware.yaml --task "observe"
+physical-agent run --config examples/moce_arm/physical-agent.partial-hardware.yaml --task "open gripper"
+physical-agent run --config examples/moce_arm/physical-agent.partial-hardware.yaml --task "close gripper"
+physical-agent run --config examples/moce_arm/physical-agent.partial-hardware.yaml --task "observe"
 ```
 
 如果用 GUI：
 
 ```bash
-physical-agent gui --config physical-agent-integration/momoagent_driver/physical-agent.partial-hardware.yaml
+physical-agent gui --config examples/moce_arm/physical-agent.partial-hardware.yaml
 ```
 
 然后在 Chat 中输入：

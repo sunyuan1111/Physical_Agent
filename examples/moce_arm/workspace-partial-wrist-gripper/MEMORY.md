@@ -1,7 +1,7 @@
 ---
 schema: physical-agent/memory/v1
 owner: agent
-revision: 8
+revision: 9
 ---
 
 # Memory
@@ -37,4 +37,9 @@ revision: 8
     \u3002"
   source: chat
   created_at: '2026-05-23T10:58:39Z'
+- content: "\u7528\u6237\u8981\u6C42\u8F6C5\u53F7\u8235\u673A-20\u5EA6\uFF0C\u5F53\
+    \u524D\u8155\u90E8\u5173\u8282\u89D2\u5EA6\u4E3A0\u5EA6\uFF0C\u76EE\u6807\u89D2\
+    \u5EA6-20\u5EA6\u3002"
+  source: chat
+  created_at: '2026-05-23T13:00:21Z'
 ```

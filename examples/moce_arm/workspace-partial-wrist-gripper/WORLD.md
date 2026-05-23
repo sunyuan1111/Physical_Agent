@@ -1,7 +1,7 @@
 ---
 schema: physical-agent/world/v1
 owner: watch
-revision: 35
+revision: 621
 ---
 
 # World State
@@ -22,7 +22,7 @@ robots:
     active_joints:
     - wrist_roll
     joints_deg:
-      wrist_roll: -19.775390625
+      wrist_roll: 0.0
     gripper:
       available: true
       open_ratio: 0.016666666666666666
@@ -37,8 +37,8 @@ raw:
   serial_port: /dev/serial/by-id/usb-1a86_USB_Single_Serial_5B61036646-if00
   partial_joint_name: wrist_roll
   partial_joint_id: 5
-  partial_joint_present_raw: 2101
-  partial_joint_startup_raw: 2326
+  partial_joint_present_raw: 2328
+  partial_joint_startup_raw: 2328
   gripper:
     available: true
     open_ratio: 0.016666666666666666
