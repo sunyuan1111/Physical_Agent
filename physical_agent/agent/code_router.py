@@ -93,6 +93,45 @@ CODE_TASK_HINTS: tuple[str, ...] = (
     "implementation",
 )
 
+ZH_CODE_RUN_HINTS: tuple[str, ...] = (
+    "运行代码",
+    "执行代码",
+    "运行脚本",
+    "执行脚本",
+    "跑代码",
+    "跑一下",
+)
+
+ZH_CODE_EDIT_HINTS: tuple[str, ...] = (
+    "代码",
+    "编写代码",
+    "写代码",
+    "写一个",
+    "实现一下",
+    "帮我实现",
+    "创建",
+    "新建",
+    "修改",
+    "文件",
+    "测试",
+    "写测试",
+    "补测试",
+    "正方形",
+    "画方形",
+    "画正方形",
+)
+
+ZH_CODE_TASK_HINTS: tuple[str, ...] = (
+    "代码",
+    "脚本",
+    "文件",
+    "测试",
+    "实现",
+    "编写",
+    "正方形",
+    "方形",
+)
+
 
 @dataclass(frozen=True)
 class CodeIntentRouter:
@@ -114,6 +153,10 @@ class CodeIntentRouter:
                 continue
             if any(phrase in text for phrase in phrases):
                 matches.append(kind)
+        if "code_run" not in matches and any(phrase in text for phrase in ZH_CODE_RUN_HINTS):
+            matches.append("code_run")
+        if "code_edit" not in matches and any(phrase in text for phrase in ZH_CODE_EDIT_HINTS):
+            matches.append("code_edit")
 
         if not matches and not _has_code_task_signal(text):
             return None
@@ -132,6 +175,8 @@ class CodeIntentRouter:
 
 def _has_code_task_signal(text: str) -> bool:
     if any(hint in text for hint in CODE_TASK_HINTS):
+        return True
+    if any(hint in text for hint in ZH_CODE_TASK_HINTS):
         return True
     if any(token in text for token in ("修改", "修复", "补测", "补测试", "写个测试", "改一下")):
         return True

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from physical_agent.agent.code_runtime import CodeSkillRuntime
+from physical_agent.agent.code_router import CodeIntentRouter
 from physical_agent.agent.driver_coder import DriverCodingAgent
 from physical_agent.agent.llm_planner import _json_safe, _normalize_depends_on
 from physical_agent.agent.onboarding import HardwareIntegrationAssistant
@@ -47,9 +48,11 @@ class ChatRuntime:
     def respond(self, message: str, *, auto_step: bool = False) -> dict[str, Any]:
         self.setup()
         workspace = self._workspace()
+        continuation_message = self._code_continuation_message(message)
+        routed_message = continuation_message or message
         workspace.append_chat_message("user", message)
 
-        code_result = self._maybe_handle_code_task(message)
+        code_result = self._maybe_handle_code_task(routed_message)
         if code_result is not None:
             code_result_data = code_result.model_dump(mode="json")
             if code_result.intent_kind == "sdk_integration":
@@ -266,6 +269,23 @@ class ChatRuntime:
                 ok=False,
                 intent_kind=match.intent.kind,
             )
+
+    def _code_continuation_message(self, message: str) -> str | None:
+        text = message.strip()
+        if not _looks_like_code_followup(text):
+            return None
+        workspace = self._workspace()
+        messages = workspace.read_chat().get("messages", [])[-6:]
+        previous_user_messages = [
+            item.content
+            for item in messages
+            if getattr(item, "role", "") == "user" and item.content != message
+        ]
+        router = CodeIntentRouter(self.base_dir)
+        for previous in reversed(previous_user_messages):
+            if router.route(previous) is not None or _mentions_code_capability(previous):
+                return f"{previous}\n\nFollow-up confirmation: {message}"
+        return None
 
     def _respond_with_integration(self, message: str) -> dict[str, Any]:
         source = self._extract_integration_source(message)
@@ -743,6 +763,46 @@ def _truncate(text: str, limit: int) -> str:
 
 def _looks_like_chinese(text: str) -> bool:
     return bool(re.search(r"[\u4e00-\u9fff]", text))
+
+
+def _looks_like_code_followup(text: str) -> bool:
+    lowered = text.lower().strip()
+    if not lowered:
+        return False
+    followups = (
+        "可以",
+        "好",
+        "好的",
+        "帮我实现",
+        "实现一下",
+        "继续",
+        "写吧",
+        "做吧",
+        "yes",
+        "ok",
+        "sure",
+        "go ahead",
+    )
+    return any(item in lowered for item in followups)
+
+
+def _mentions_code_capability(text: str) -> bool:
+    lowered = text.lower()
+    markers = (
+        "代码",
+        "脚本",
+        "运行",
+        "执行",
+        "编写",
+        "实现",
+        "test",
+        "tests",
+        "code",
+        "script",
+        "run",
+        "execute",
+    )
+    return any(marker in lowered for marker in markers)
 
 
 def _max_action_number(action_ids: set[str]) -> int:

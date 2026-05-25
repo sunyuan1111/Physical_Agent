@@ -340,10 +340,13 @@ physical-agent setup --force
 physical-agent chat
 ```
 
+`physical-agent chat` 是日常唯一对话入口：启动后直接输入自然语言即可。它可以聊天、记忆、提交物理动作，也可以把代码类请求路由到 skills，直接改文件并运行测试。
+
 单条消息模式：
 
 ```bash
 physical-agent chat --message "What can you see right now?"
+physical-agent chat "在 test 里写一个最简单的正方形示例并运行"
 physical-agent chat --planner llm --auto-step --message "Please pick the red block and place it on the tray."
 ```
 

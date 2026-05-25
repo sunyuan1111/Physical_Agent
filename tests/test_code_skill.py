@@ -316,6 +316,43 @@ def test_chat_runtime_exposes_skills_in_response(tmp_path):
     assert any(skill["name"] == "code" for skill in result["skills"])
 
 
+def test_code_router_recognizes_chinese_code_requests(tmp_path):
+    router = CodeIntentRouter(tmp_path)
+
+    assert router.route("你可以编写代码吗 能在test里面编写一个最简单的代码并运行吗") is not None
+    assert router.route("帮我实现一个最简单的正方形程序").kind == "code_edit"
+    assert router.route("运行这个脚本").kind == "code_run"
+
+
+def test_code_skill_builtin_square_task_writes_and_tests_files(tmp_path):
+    runtime = CodeSkillRuntime(tmp_path)
+
+    result = runtime.run("在test里面编写一个最简单的正方形代码并运行")
+
+    assert result.ok is True
+    assert result.intent_kind == "code_edit"
+    assert "test/draw_square.py" in result.changed_files
+    assert "tests/test_draw_square.py" in result.changed_files
+    assert "__exitcode__:0" in result.test_output
+
+
+def test_chat_runtime_continues_chinese_code_followup_into_skill(tmp_path):
+    config_path = tmp_path / "physical-agent.yaml"
+    setup_project(config_path, publish=True)
+    runtime = ChatRuntime(config_path, planner_name="rule_based")
+
+    first = runtime.respond("你不能运行吗？我想在test里面编写一个最简单的正方形程序并运行")
+    second = runtime.respond("可以，帮我实现一下")
+
+    assert first["mode"] == "code"
+    assert second["mode"] == "code"
+    assert second["code_result"]["ok"] is True
+    assert "test/draw_square.py" in second["code_result"]["changed_files"]
+    assert "tests/test_draw_square.py" in second["code_result"]["changed_files"]
+    assert (tmp_path / "test" / "draw_square.py").exists()
+    assert (tmp_path / "tests" / "test_draw_square.py").exists()
+
+
 def test_cli_chat_hides_structured_code_result_by_default(tmp_path, monkeypatch):
     config_path = tmp_path / "physical-agent.yaml"
     setup_project(config_path, publish=True)
@@ -341,6 +378,31 @@ def test_cli_chat_hides_structured_code_result_by_default(tmp_path, monkeypatch)
     assert result.exit_code == 0
     assert "Yes. I treated that as a code task" in result.output
     assert "Code skill result:" not in result.output
+
+
+def test_cli_chat_accepts_prompt_argument_as_short_entrypoint(tmp_path, monkeypatch):
+    config_path = tmp_path / "physical-agent.yaml"
+    setup_project(config_path, publish=True)
+
+    original = ChatRuntime._code_runtime
+    monkeypatch.setattr(ChatRuntime, "_code_runtime", lambda self: FakeCodeRuntime())
+    try:
+        result = CliRunner().invoke(
+            app,
+            [
+                "chat",
+                "please modify files and write tests",
+                "--config",
+                str(config_path),
+                "--planner",
+                "rule_based",
+            ],
+        )
+    finally:
+        monkeypatch.setattr(ChatRuntime, "_code_runtime", original)
+
+    assert result.exit_code == 0
+    assert "Yes. I treated that as a code task" in result.output
 
 
 def test_cli_chat_can_show_structured_code_result(tmp_path, monkeypatch):

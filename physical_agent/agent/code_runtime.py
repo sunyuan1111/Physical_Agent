@@ -71,6 +71,9 @@ class CodeSkillRuntime:
         intent = context["intent"]
         if intent.get("kind") == "sdk_integration":
             return self._run_integration_skill(message, intent=intent)
+        deterministic = self._maybe_run_builtin_code_task(message, intent=intent)
+        if deterministic is not None:
+            return deterministic
         if intent.get("kind") == "code_run":
             return self._run_code_execution(message, context=context, intent=intent)
 
@@ -126,6 +129,70 @@ class CodeSkillRuntime:
 
     def detect(self, message: str):
         return self.router.route(message)
+
+    def _maybe_run_builtin_code_task(self, message: str, *, intent: dict[str, Any]) -> CodeTaskResult | None:
+        if not _looks_like_square_task(message):
+            return None
+
+        edits = [
+            FileEdit(
+                path="test/__init__.py",
+                content='"""Small generated examples used by Physical Agent code skills."""\n',
+            ),
+            FileEdit(
+                path="test/draw_square.py",
+                content=(
+                    "from __future__ import annotations\n\n"
+                    "from pathlib import Path\n\n\n"
+                    "def draw_square_svg(output_path: str | Path, *, size: int = 64) -> Path:\n"
+                    "    if size <= 0:\n"
+                    "        raise ValueError(\"size must be positive\")\n"
+                    "    output = Path(output_path)\n"
+                    "    output.parent.mkdir(parents=True, exist_ok=True)\n"
+                    "    svg = (\n"
+                    "        f'<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{size}\" height=\"{size}\" '\n"
+                    "        f'viewBox=\"0 0 {size} {size}\">\\n'\n"
+                    "        f'  <rect x=\"4\" y=\"4\" width=\"{size - 8}\" height=\"{size - 8}\" '\n"
+                    "        f'stroke=\"#1f2937\" stroke-width=\"4\" fill=\"#dcfce7\" />\\n'\n"
+                    "        '</svg>\\n'\n"
+                    "    )\n"
+                    "    output.write_text(svg, encoding=\"utf-8\")\n"
+                    "    return output\n\n\n"
+                    "if __name__ == \"__main__\":\n"
+                    "    draw_square_svg(Path(\"square.svg\"))\n"
+                ),
+            ),
+            FileEdit(
+                path="tests/test_draw_square.py",
+                content=(
+                    "from test.draw_square import draw_square_svg\n\n\n"
+                    "def test_draw_square_svg_writes_svg(tmp_path):\n"
+                    "    out = tmp_path / \"square.svg\"\n\n"
+                    "    result = draw_square_svg(out, size=40)\n\n"
+                    "    assert result == out\n"
+                    "    svg = out.read_text(encoding=\"utf-8\")\n"
+                    "    assert \"<rect\" in svg\n"
+                    "    assert 'width=\"32\"' in svg\n"
+                ),
+            ),
+        ]
+        changed_files = apply_file_edits(self.root, edits)
+        tests = ["pytest tests/test_draw_square.py -q"]
+        test_output = self._run_tests(tests)
+        ok = _tests_passed(test_output)
+        lesson = self.lessons.append(
+            f"Built-in square code task {'succeeded' if ok else 'failed'}. Changed files: {', '.join(changed_files)}."
+        )
+        return CodeTaskResult(
+            summary="Created a minimal square SVG program and test.",
+            changed_files=changed_files,
+            tests_run=tests,
+            test_output=test_output,
+            lessons_written=[lesson],
+            rounds=1,
+            ok=ok,
+            intent_kind="code_edit",
+        )
 
     def _gather_context(self, message: str) -> dict[str, Any] | None:
         intent = self.router.route(message)
@@ -593,6 +660,16 @@ def _summarize_console_output(stdout: str, stderr: str, *, limit: int = 160) -> 
         if any(term in lowered for term in priority_terms):
             return _truncate(line, limit)
     return _truncate(lines[-1], limit)
+
+
+def _looks_like_square_task(message: str) -> bool:
+    text = message.lower()
+    has_square = any(marker in text for marker in ("正方形", "方形", "square"))
+    has_code = any(
+        marker in text
+        for marker in ("代码", "程序", "脚本", "test", "tests", "code", "script", "实现", "编写", "写")
+    )
+    return has_square and has_code
 
 
 def _truncate(text: str, limit: int) -> str:

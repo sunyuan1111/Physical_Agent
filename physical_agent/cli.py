@@ -134,6 +134,10 @@ def run(
 
 @app.command("chat")
 def chat(
+    prompt: Optional[str] = typer.Argument(
+        None,
+        help="Optional one-shot chat message. Omit it to start interactive chat.",
+    ),
     message: Optional[str] = typer.Option(None, "--message", "-m", help="Send one chat message and exit."),
     config: Path = typer.Option(Path(DEFAULT_CONFIG_NAME), "--config", "-c", help="Config path."),
     planner: Optional[str] = typer.Option("auto", "--planner", help="Chat brain: auto, llm, or rule_based."),
@@ -150,8 +154,9 @@ def chat(
     ),
 ) -> None:
     runtime = ChatRuntime(config, planner_name=planner, model=model)
-    if message is not None:
-        result = runtime.respond(message, auto_step=auto_step)
+    one_shot = message if message is not None else prompt
+    if one_shot is not None:
+        result = runtime.respond(one_shot, auto_step=auto_step)
         typer.echo(result["reply"])
         if show_code_result and result.get("code_result"):
             _echo_code_result(dict(result["code_result"]))
@@ -163,7 +168,7 @@ def chat(
             typer.echo(f"Watch step executed {result['executed']} action(s).")
         return
 
-    typer.echo("Physical Agent chat mode. Press Ctrl+C or submit an empty message to exit.")
+    typer.echo("Physical Agent chat mode. Ask normally; code tasks can edit files and run tests. Press Ctrl+C or submit an empty message to exit.")
     while True:
         text = input("you> ").strip()
         if not text:
