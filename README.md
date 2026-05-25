@@ -488,10 +488,13 @@ physical-agent setup --force
 physical-agent chat
 ```
 
+`physical-agent chat` is the single everyday entrypoint: start it once, then type normally. It can answer, remember notes, propose physical actions, and route code requests into skills that edit files and run tests.
+
 Or send one message and exit:
 
 ```bash
 physical-agent chat --message "What can you see right now?"
+physical-agent chat "write a tiny square example under test and run it"
 physical-agent chat --planner llm --auto-step --message "Please pick the red block and place it on the tray."
 ```
 
