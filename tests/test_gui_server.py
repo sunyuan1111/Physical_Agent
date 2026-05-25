@@ -163,6 +163,57 @@ def test_gui_http_chat_endpoint(tmp_path):
         server.server_close()
 
 
+def test_gui_http_chat_endpoint_exposes_code_result(tmp_path, monkeypatch):
+    from physical_agent.agent.chat_runtime import ChatRuntime
+    from physical_agent.agent.code_runtime import CodeSkillRuntime
+    from physical_agent.protocol.schemas import CodeTaskIntent, CodeTaskResult
+
+    class FakeCodeRuntime:
+        def detect(self, message: str):
+            return CodeTaskIntent(
+                kind="code_edit",
+                confidence=1.0,
+                reason="test",
+                requested_files=[],
+            )
+
+        def run(self, message: str):
+            return CodeTaskResult(
+                summary="Updated via GUI chat.",
+                changed_files=["README.md"],
+                tests_run=["pytest", "-q"],
+                test_output="ok",
+                lessons_written=["GUI code lesson"],
+                rounds=1,
+                ok=True,
+                intent_kind="code_edit",
+            )
+
+    server = make_server(tmp_path / "physical-agent.yaml", port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        _request(f"{base_url}/api/setup", method="POST", payload={})
+        original = ChatRuntime._code_runtime
+        monkeypatch.setattr(ChatRuntime, "_code_runtime", lambda self: FakeCodeRuntime())
+        try:
+            chat = _request(
+                f"{base_url}/api/chat",
+                method="POST",
+                payload={"message": "please modify files and write tests", "planner": "rule_based"},
+            )
+        finally:
+            monkeypatch.setattr(ChatRuntime, "_code_runtime", original)
+
+        assert chat["ok"] is True
+        assert chat["code_result"]["summary"] == "Updated via GUI chat."
+        assert chat["state"]["code_result"]["summary"] == "Updated via GUI chat."
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_gui_http_integrate_endpoint(tmp_path):
     sdk = tmp_path / "vendor_sdk"
     sdk.mkdir()

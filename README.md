@@ -497,6 +497,10 @@ physical-agent chat --planner llm --auto-step --message "Please pick the red blo
 
 The chat command defaults to `--planner auto`: it uses the LLM planner when `.env` contains API settings and falls back to rule-based chat otherwise. The chat agent reads `CHAT.md`, `MEMORY.md`, `CAPABILITIES.md`, `WORLD.md`, and `FEEDBACK.md`. It writes replies back to `CHAT.md`, writes its current intent to `PLAN.md`, and writes proposed actions to `ACTIONS.md`. Watch still validates and executes those actions.
 
+When a chat message looks like a code task, the same `physical-agent chat` entry automatically switches into the code skill. That means prompts such as "modify this file", "write tests", "fix this bug", or "help me integrate this SDK" can trigger repository edits, local test runs, and persistent lessons in `.physical-agent/code/LESSONS.md` without creating a separate command. The physical execution boundary does not change: only `watch` can touch hardware.
+
+Repo-local skills are also discoverable from the `skills/` directory, and you can inspect them with `physical-agent skill list`. The built-in code skill is the first example of that pattern.
+
 When chat prints `LLM chat was unavailable`, the framework did not crash. It means `--planner auto` tried the API first and then used the local rule-based fallback. Common causes:
 
 - `HTTP 503`: the upstream provider is temporarily unavailable.
@@ -505,6 +509,8 @@ When chat prints `LLM chat was unavailable`, the framework did not crash. It mea
 - `model not found` or provider-specific errors: set `GPT_MODEL` to a model name your provider actually supports.
 
 Use `physical-agent llm-test --model <model-name>` to verify a candidate model. If you want strict API behavior with no fallback, run chat with `--planner llm`; if you want the CLI to stay usable during API outages, keep the default `--planner auto`.
+
+If you want chat to behave like a code-first assistant inside the current repository, ask it to edit files or fix tests directly. The chat runtime will route those requests into the code skill, apply changes under the repository root, run tests, and report the changed files plus test output.
 
 Execute the proposed actions by running watch in another terminal:
 

@@ -11,6 +11,7 @@ from physical_agent.agent.chat_runtime import ChatRuntime
 from physical_agent.agent.driver_coder import DriverCodingAgent
 from physical_agent.agent.onboarding import HardwareIntegrationAssistant
 from physical_agent.agent.runtime import AgentRuntime
+from physical_agent.agent.skills import SkillRouter
 from physical_agent.config import DEFAULT_CONFIG_NAME, load_config, write_default_config
 from physical_agent.doctor import doctor_ok, run_doctor
 from physical_agent.drivers.templates import create_driver_template
@@ -24,6 +25,8 @@ from physical_agent.watch.runtime import WatchRuntime
 app = typer.Typer(help="Physical Agent: Markdown-native runtime for safe physical-world agents.")
 driver_app = typer.Typer(help="Driver utilities.")
 app.add_typer(driver_app, name="driver")
+skill_app = typer.Typer(help="Skill utilities.")
+app.add_typer(skill_app, name="skill")
 
 
 @app.command("init")
@@ -145,6 +148,16 @@ def chat(
     if message is not None:
         result = runtime.respond(message, auto_step=auto_step)
         typer.echo(result["reply"])
+        if result.get("code_result"):
+            typer.echo("Code skill result:")
+            code_result = dict(result["code_result"])
+            if code_result.get("intent_kind") == "code_run":
+                typer.echo(f"Summary: {code_result.get('summary', '')}")
+                typer.echo(f"Status: {'succeeded' if code_result.get('ok') else 'failed'}")
+                typer.echo(f"Command: {', '.join(code_result.get('tests_run') or []) or 'none'}")
+                typer.echo(f"Artifacts: {', '.join(code_result.get('run_artifacts') or []) or 'none'}")
+            else:
+                typer.echo(yaml.safe_dump(code_result, sort_keys=False).strip())
         if result["actions"]:
             typer.echo("Proposed actions:")
             for action in result["actions"]:
@@ -164,6 +177,16 @@ def chat(
             typer.echo(f"agent> Chat failed: {exc}")
             continue
         typer.echo(f"agent> {result['reply']}")
+        if result.get("code_result"):
+            typer.echo("agent> Code skill result:")
+            code_result = dict(result["code_result"])
+            if code_result.get("intent_kind") == "code_run":
+                typer.echo(f"agent> Summary: {code_result.get('summary', '')}")
+                typer.echo(f"agent> Status: {'succeeded' if code_result.get('ok') else 'failed'}")
+                typer.echo(f"agent> Command: {', '.join(code_result.get('tests_run') or []) or 'none'}")
+                typer.echo(f"agent> Artifacts: {', '.join(code_result.get('run_artifacts') or []) or 'none'}")
+            else:
+                typer.echo(yaml.safe_dump(code_result, sort_keys=False).strip())
         if result["actions"]:
             typer.echo("agent> Proposed actions:")
             for action in result["actions"]:
@@ -224,19 +247,23 @@ def inspect(
     else:
         typer.echo("- none")
 
-    typer.echo("\nCompleted actions:")
-    if actions["completed"]:
-        for action in actions["completed"]:
-            typer.echo(f"- {action.id}: {action.robot}.{action.capability}")
-    else:
-        typer.echo("- none")
 
-    typer.echo("\nLatest feedback:")
-    latest = feedback.get("latest", {})
-    if latest:
-        typer.echo(yaml.safe_dump(latest, sort_keys=False).strip())
-    else:
-        typer.echo("- none")
+@skill_app.command("list")
+def skill_list(
+    config: Path = typer.Option(Path(DEFAULT_CONFIG_NAME), "--config", "-c", help="Config path."),
+) -> None:
+    cfg = load_config(config)
+    router = SkillRouter(
+        config.resolve().parent,
+        model=cfg.agent.model if cfg.agent.model != "fake/local" else None,
+        env_file=config.resolve().parent / ".env",
+    )
+    typer.echo("Available skills:")
+    for skill in router.list_skills():
+        typer.echo(f"- {skill.name}: {skill.title}")
+        typer.echo(f"  {skill.summary}")
+        if skill.triggers:
+            typer.echo(f"  Triggers: {', '.join(skill.triggers)}")
 
 
 @app.command("integrate")

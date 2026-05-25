@@ -49,6 +49,7 @@ class GuiController:
 
         actions = workspace.read_actions()
         feedback = workspace.read_feedback()
+        code_result = _latest_code_result(workspace.read_chat())
         return {
             "ready": True,
             "watch_started": self._watch_started,
@@ -58,6 +59,7 @@ class GuiController:
             "task": workspace.read_task(),
             "capabilities": workspace.read_capabilities(),
             "world": workspace.read_world(),
+            "code_result": code_result,
             "actions": {
                 "pending": _dump_actions(actions["pending"]),
                 "completed": _dump_actions(actions["completed"]),
@@ -122,12 +124,16 @@ class GuiController:
                 assert self.watch_runtime is not None
                 executed = asyncio.run(self.watch_runtime.step(setup=False))
                 result["executed"] = executed
+            state = self.state()
+            if result.get("code_result") is not None:
+                state = {**state, "code_result": result["code_result"]}
             return {
                 "ok": True,
                 "message": result["reply"],
                 "result": _json_safe(result),
+                "code_result": _json_safe(result.get("code_result")),
                 "executed": executed,
-                "state": self.state(),
+                "state": state,
             }
 
     def integrate_hardware(
@@ -377,6 +383,19 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def _latest_code_result(chat: dict[str, Any]) -> dict[str, Any] | None:
+    messages = chat.get("messages", [])
+    for message in reversed(messages):
+        metadata = None
+        if hasattr(message, "metadata"):
+            metadata = getattr(message, "metadata")
+        elif isinstance(message, dict):
+            metadata = message.get("metadata")
+        if isinstance(metadata, dict) and metadata.get("code_result") is not None:
+            return _json_safe(metadata["code_result"])
+    return None
+
+
 INDEX_HTML = r"""<!doctype html>
 <html lang="en">
 <head>
@@ -579,6 +598,10 @@ INDEX_HTML = r"""<!doctype html>
           <button id="send-chat" class="primary" data-i18n="send">Send</button>
           <label><input id="chat-auto-step" type="checkbox"> <span data-i18n="autoStep">Run one watch step</span></label>
         </div>
+        <details id="code-result-panel" style="display:none;">
+          <summary data-i18n="codeSkillTitle">Code skill result</summary>
+          <pre id="code-result-json">{}</pre>
+        </details>
       </section>
 
       <section class="stack">
@@ -688,6 +711,7 @@ INDEX_HTML = r"""<!doctype html>
         runningDemo: "Running demo",
         refreshing: "Refreshing",
         sendingChat: "Sending",
+        codeSkillTitle: "Code skill result",
         integrateTitle: "Hardware integration",
         integrateSourcePlaceholder: "./vendor_sdk or https://github.com/org/repo",
         integrateNamePlaceholder: "optional_driver_name",
@@ -745,6 +769,7 @@ INDEX_HTML = r"""<!doctype html>
         runningDemo: "正在运行演示",
         refreshing: "正在刷新",
         sendingChat: "正在发送",
+        codeSkillTitle: "代码技能结果",
         integrateTitle: "硬件接入",
         integrateSourcePlaceholder: "./vendor_sdk 或 https://github.com/org/repo",
         integrateNamePlaceholder: "可选驱动名",
@@ -778,6 +803,8 @@ INDEX_HTML = r"""<!doctype html>
       chatPlanner: document.querySelector("#chat-planner"),
       chatAutoStep: document.querySelector("#chat-auto-step"),
       sendChat: document.querySelector("#send-chat"),
+      codeResultPanel: document.querySelector("#code-result-panel"),
+      codeResultJson: document.querySelector("#code-result-json"),
       integrateSource: document.querySelector("#integrate-source"),
       integrateName: document.querySelector("#integrate-name"),
       integrateModel: document.querySelector("#integrate-model"),
@@ -840,10 +867,22 @@ INDEX_HTML = r"""<!doctype html>
       els.status.textContent = ready ? (state.watch_started ? t("readyWatch") : t("readyStopped")) : t("setupNeeded");
 
       renderChat(state);
+      renderCodeResult(state);
       renderWorld(state);
       renderActions(state);
       renderFeedback(state);
       renderSystem(state);
+    }
+
+    function renderCodeResult(state) {
+      const codeResult = state.code_result || null;
+      if (!codeResult) {
+        els.codeResultPanel.style.display = "none";
+        els.codeResultJson.textContent = "{}";
+        return;
+      }
+      els.codeResultPanel.style.display = "block";
+      els.codeResultJson.textContent = JSON.stringify(codeResult, null, 2);
     }
 
     function renderChat(state) {

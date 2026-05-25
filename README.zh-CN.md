@@ -40,6 +40,8 @@ Workspace: Markdown files are the protocol between cognition and execution.
 
 `physical-agent run` 和 `physical-agent chat` 是认知侧入口，负责读取 Markdown workspace、理解任务、生成结构化 action intent，并写入 `ACTIONS.md`。
 
+现在 `physical-agent chat` 也会自动识别代码类请求，比如“修改这个文件”“写测试”“修复这个 bug”“帮我接入这个 SDK”。命中后，它会切换到代码技能：在当前仓库根目录内直接写文件、运行测试、记录 lessons，并返回修改结果。这个能力仍然不改变物理执行边界，真正能接触硬件的只有 `physical-agent watch`。
+
 硬边界：
 
 - agent 不导入 driver

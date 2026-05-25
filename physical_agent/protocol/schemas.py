@@ -117,6 +117,26 @@ class WorkspaceDocument(StrictModel):
             return 0
 
 
+class CodeTaskIntent(StrictModel):
+    kind: str
+    confidence: float = 0.0
+    reason: str = ""
+    requested_files: list[str] = Field(default_factory=list)
+
+
+class CodeTaskResult(StrictModel):
+    summary: str
+    changed_files: list[str] = Field(default_factory=list)
+    tests_run: list[str] = Field(default_factory=list)
+    test_output: str = ""
+    lessons_written: list[str] = Field(default_factory=list)
+    rounds: int = 0
+    ok: bool = True
+    intent_kind: str = "code_edit"
+    run_artifacts: list[str] = Field(default_factory=list)
+    integration: dict[str, Any] = Field(default_factory=dict)
+
+
 class ChatMessage(StrictModel):
     role: Literal["user", "assistant", "system"]
     content: str

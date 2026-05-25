@@ -5,13 +5,15 @@ import re
 from pathlib import Path
 from typing import Any
 
+from physical_agent.agent.code_runtime import CodeSkillRuntime
 from physical_agent.agent.driver_coder import DriverCodingAgent
 from physical_agent.agent.llm_planner import _json_safe, _normalize_depends_on
 from physical_agent.agent.onboarding import HardwareIntegrationAssistant
 from physical_agent.agent.rule_based import RuleBasedPlanner
+from physical_agent.agent.skills import SkillRouter
 from physical_agent.config import DEFAULT_CONFIG_NAME, PhysicalAgentConfig, load_config, write_default_config
 from physical_agent.llm import OpenAICompatibleClient, OpenAICompatibleSettings
-from physical_agent.protocol.schemas import Action, ChatMessage, ChatPlan
+from physical_agent.protocol.schemas import Action, ChatMessage, ChatPlan, CodeTaskResult
 from physical_agent.protocol.workspace import Workspace
 from physical_agent.watch.runtime import WatchRuntime
 
@@ -32,6 +34,8 @@ class ChatRuntime:
         self.workspace: Workspace | None = None
         self.rule_planner = RuleBasedPlanner()
         self.llm_client: OpenAICompatibleClient | None = None
+        self.code_runtime: CodeSkillRuntime | None = None
+        self.skill_router: SkillRouter | None = None
 
     def setup(self) -> None:
         if not self.config_path.exists():
@@ -44,6 +48,74 @@ class ChatRuntime:
         self.setup()
         workspace = self._workspace()
         workspace.append_chat_message("user", message)
+
+        code_result = self._maybe_handle_code_task(message)
+        if code_result is not None:
+            code_result_data = code_result.model_dump(mode="json")
+            if code_result.intent_kind == "sdk_integration":
+                integration = dict(code_result_data.get("integration") or {})
+                plan = ChatPlan(
+                    status="answered",
+                    intent="integrate",
+                    summary=code_result.summary,
+                    steps=[
+                        f"Generated files: {', '.join(code_result.changed_files) or 'none'}",
+                        f"Tests run: {', '.join(code_result.tests_run) or 'none'}",
+                    ],
+                    actions=[],
+                    needs_watch=False,
+                )
+                workspace.write_plan(plan)
+                assistant = workspace.append_chat_message(
+                    "assistant",
+                    code_result.summary,
+                    metadata={
+                        "intent": "integrate",
+                        "integration": integration,
+                        "code_result": code_result_data,
+                        "needs_watch": False,
+                        "executed": 0,
+                    },
+                )
+                workspace.append_log("Chat assistant generated an integration plan.", actor="agent")
+                return {
+                    "ok": code_result.ok,
+                    "mode": "integration",
+                    "reply": assistant.content,
+                    "actions": [],
+                    "memory": [],
+                    "plan": plan.model_dump(mode="json"),
+                    "executed": 0,
+                "feedback": workspace.read_feedback(),
+                "code_result": code_result_data,
+                "skills": [skill.as_dict() for skill in self._skill_router().list_skills()],
+                "integration": integration,
+            }
+
+            workspace.append_log(
+                f"Chat code skill ran for {code_result.rounds} round(s).",
+                actor="agent",
+            )
+            assistant = workspace.append_chat_message(
+                "assistant",
+                self._format_code_result(code_result),
+                metadata={
+                    "intent": "code_edit",
+                    "code_result": code_result_data,
+                },
+            )
+            return {
+                "ok": code_result.ok,
+                "mode": "code",
+                "reply": assistant.content,
+                "actions": [],
+                "memory": [],
+                "plan": None,
+                "executed": 0,
+                "feedback": workspace.read_feedback(),
+                "code_result": code_result_data,
+                "skills": [skill.as_dict() for skill in self._skill_router().list_skills()],
+            }
 
         if self._looks_like_integration_request(message):
             response = self._respond_with_integration(message)
@@ -80,6 +152,7 @@ class ChatRuntime:
                 "executed": executed,
                 "feedback": workspace.read_feedback(),
                 "integration": response.get("integration", {}),
+                "skills": [skill.as_dict() for skill in self._skill_router().list_skills()],
             }
 
         capabilities = workspace.read_capabilities()
@@ -170,7 +243,29 @@ class ChatRuntime:
             "plan": plan.model_dump(mode="json"),
             "executed": executed,
             "feedback": feedback if auto_step else workspace.read_feedback(),
+            "code_result": None,
+            "skills": [skill.as_dict() for skill in self._skill_router().list_skills()],
         }
+
+    def _maybe_handle_code_task(self, message: str):
+        match = self._skill_router().match(message)
+        if match is None:
+            return None
+        try:
+            return self._skill_router().run(message)
+        except Exception as exc:
+            runtime = self._code_runtime()
+            lesson = runtime.lessons.append(f"Code skill failed: {exc}")
+            return CodeTaskResult(
+                summary=f"Code skill failed: {exc}",
+                changed_files=[],
+                tests_run=[],
+                test_output=str(exc),
+                lessons_written=[lesson] if lesson else [],
+                rounds=0,
+                ok=False,
+                intent_kind=match.intent.kind,
+            )
 
     def _respond_with_integration(self, message: str) -> dict[str, Any]:
         source = self._extract_integration_source(message)
@@ -498,6 +593,49 @@ class ChatRuntime:
         if self.workspace is None:
             raise RuntimeError("ChatRuntime has not been set up.")
         return self.workspace
+
+    def _code_runtime(self) -> CodeSkillRuntime:
+        if self.code_runtime is None:
+            config = self._config()
+            self.code_runtime = CodeSkillRuntime(
+                self.base_dir,
+                model=self.model or (config.agent.model if config.agent.model != "fake/local" else None),
+                env_file=self.base_dir / ".env",
+            )
+        return self.code_runtime
+
+    def _skill_router(self) -> SkillRouter:
+        if self.skill_router is None:
+            config = self._config()
+            self.skill_router = SkillRouter(
+                self.base_dir,
+                model=self.model or (config.agent.model if config.agent.model != "fake/local" else None),
+                env_file=self.base_dir / ".env",
+                code_runtime=self._code_runtime(),
+            )
+        return self.skill_router
+
+    def _format_code_result(self, result: Any) -> str:
+        changed = ", ".join(result.changed_files) or "none"
+        tests = ", ".join(result.tests_run) or "none"
+        artifacts = ", ".join(getattr(result, "run_artifacts", []) or []) or "none"
+        summary = result.summary or "Updated the repository."
+        if getattr(result, "intent_kind", "") == "code_run":
+            status = "succeeded" if result.ok else "failed"
+            return (
+                f"{summary}\n\n"
+                f"Execution {status} after {result.rounds} pass(es).\n"
+                f"Command: {tests}\n"
+                f"Artifacts: {artifacts}"
+            )
+        status = "succeeded" if result.ok else "needs another round"
+        return (
+            f"{summary}\n\n"
+            f"Code skill {status} after {result.rounds} round(s).\n"
+            f"Changed files: {changed}\n"
+            f"Tests run: {tests}\n"
+            f"Test output:\n{result.test_output.strip() or 'No test output.'}"
+        )
 
     def _config(self) -> PhysicalAgentConfig:
         if self.config is None:

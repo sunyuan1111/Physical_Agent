@@ -7,5 +7,6 @@ dist/
 build/
 workspace/
 .codex-artifacts/
+.physical-agent/
 /physical-agent.yaml
 .env
