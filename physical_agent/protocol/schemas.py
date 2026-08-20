@@ -17,6 +17,7 @@ class Action(StrictModel):
     params: dict[str, Any] = Field(default_factory=dict)
     reason: str | None = None
     depends_on: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ActionResult(StrictModel):
@@ -145,7 +146,7 @@ class ChatMessage(StrictModel):
 
 
 class ChatPlan(StrictModel):
-    status: Literal["idle", "thinking", "proposed_actions", "answered", "needs_watch", "error"] = "idle"
+    status: Literal["idle", "thinking", "proposed_actions", "answered", "needs_watch", "error", "cancelled"] = "idle"
     intent: str = ""
     summary: str = ""
     steps: list[str] = Field(default_factory=list)

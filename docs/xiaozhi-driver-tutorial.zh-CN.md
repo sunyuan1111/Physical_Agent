@@ -22,12 +22,12 @@ Physical Agent 可以理解成一个三段式系统：
   |
   v
 AgentRuntime
-读取 CAPABILITIES.md / WORLD.md
-生成 ACTIONS.md
+读取 SQLite 黑板里的 capabilities / world
+追加 pending action
   |
   v
 WatchRuntime
-轮询 ACTIONS.md
+原子领取 ready action
 安全检查
 调用对应 robot 的 driver.execute(action)
   |
@@ -40,14 +40,14 @@ http 模式：发送 JSON-RPC 到小智 MCP endpoint
 小智设备 / 小智 MCP 服务
   |
   v
-WatchRuntime 写回 FEEDBACK.md / WORLD.md / LOG.md
+WatchRuntime 写回 SQLite feedback / world / log
 ```
 
 这里有两层通信：
 
 ```text
 Agent <-> Watch：
-  通过 workspace 里的 Markdown 文件通信
+  通过 workspace/state.db 里的 StateStore 黑板通信
 
 Watch <-> 小智 MCP：
   通过 JSON-RPC tools/call 通信
@@ -365,10 +365,10 @@ watch 启动时会：
 1. 加载 XiaozhiMcpDriver。
 2. 调用 driver.connect()。
 3. 调用 driver.capabilities()。
-4. 把能力写入 CAPABILITIES.md。
+4. 把能力写入 SQLite 黑板的 capabilities 文档。
 ```
 
-agent 之后不是通过读源码知道小智能力，而是通过读取 `CAPABILITIES.md` 知道：
+agent 之后不是通过读源码知道小智能力，而是通过读取 StateStore 里的 capabilities 知道：
 
 ```text
 xiaozhi_1 可以 observe。
@@ -378,46 +378,47 @@ xiaozhi_1 可以 set_light(r, g, b)。
 
 这让 agent 的认知侧和硬件实现侧保持解耦。
 
-## Agent 和 Watch 的 Markdown 通信
+## Agent 和 Watch 的 SQLite 黑板通信
 
-Physical Agent v1 使用 workspace 里的 Markdown 文件作为 agent 和 watch 之间的协议。
+Physical Agent 现在使用 `workspace/state.db` 作为 agent 和 watch 之间的状态黑板。agent 只追加 proposal/action，watch 是唯一执行侧。
 
-主要文件包括：
+主要状态文档包括：
 
 ```text
-TASK.md
-CAPABILITIES.md
-WORLD.md
-ACTIONS.md
-FEEDBACK.md
-SAFETY.md
-LOG.md
+task
+capabilities
+world
+actions
+feedback
+chat
+plan
+memory
+log
 ```
 
 它们的职责如下：
 
 ```text
-TASK.md：
+task：
   当前用户任务。
 
-CAPABILITIES.md：
+capabilities：
   当前可用 robot 和能力清单。
 
-WORLD.md：
+world：
   当前观察到的世界状态。
 
-ACTIONS.md：
-  agent 提交的待执行动作。
+actions：
+  agent 提交的 pending action；watch 原子领取并标记 completed/cancelled。
 
-FEEDBACK.md：
+feedback：
   watch 执行动作后的结果。
 
-SAFETY.md：
-  安全规则。
-
-LOG.md：
+log：
   运行日志。
 ```
+
+`SAFETY.md` 是例外：它仍是文件真源，不进入 SQLite。watch 执行前必须读取并通过 SafetyGate。
 
 通信流程是：
 
@@ -425,26 +426,26 @@ LOG.md：
 watch 启动后：
   连接 driver
   调用 driver.capabilities()
-  写 CAPABILITIES.md
+  写 capabilities
   调用 driver.observe()
-  写 WORLD.md
+  写 world
 
 agent 收到用户任务后：
-  写 TASK.md
-  读 CAPABILITIES.md
-  读 WORLD.md
+  写 task
+  读 capabilities
+  读 world
   规划动作
-  写 ACTIONS.md
+  append pending action
 
 watch 循环运行：
-  读 ACTIONS.md
+  claim ready action
   做安全检查
   调用 driver.execute(action)
-  写 FEEDBACK.md
-  更新 WORLD.md
+  写 feedback
+  更新 world / log
 ```
 
-这意味着 agent 和 watch 不需要在同一个进程里直接互调。只要双方遵守 Markdown 文件格式，就能协作。
+这意味着 agent 和 watch 不需要在同一个进程里直接互调。只要双方通过 StateStore 契约读写黑板，就能协作。
 
 ## 完整例子：让小智说话并设置灯光
 
@@ -454,7 +455,7 @@ watch 循环运行：
 让小智说“你好，我准备好了”，然后把灯调成蓝色
 ```
 
-agent 读取 `CAPABILITIES.md` 后知道 `xiaozhi_1` 有 `say` 和 `set_light` 两个能力。于是它会生成类似这样的动作：
+agent 读取 StateStore 里的 capabilities 后知道 `xiaozhi_1` 有 `say` 和 `set_light` 两个能力。于是它会追加类似这样的 pending action：
 
 ```yaml
 pending:
@@ -475,7 +476,7 @@ pending:
     reason: The task asks to change a light.
 ```
 
-watch 看到 `ACTIONS.md` 里有 pending action 后，会找到 `xiaozhi_1` 对应的 driver：
+watch 从 SQLite action board 原子领取 pending action 后，会找到 `xiaozhi_1` 对应的 driver：
 
 ```python
 loaded = self.loaded_drivers[action.robot]
@@ -589,7 +590,7 @@ tools:
   agent 只能提交 action，不能直接无限制操作硬件。
 
 可观察：
-  TASK / ACTIONS / FEEDBACK / WORLD 都落在 Markdown 文件里，方便审计和调试。
+  task / actions / feedback / world 都进入 SQLite，并可通过 export-audit 导出人类可读视图。
 
 可替换：
   今天是小智 MCP，明天可以换成机械臂、小车、摄像头、PLC。
@@ -677,7 +678,7 @@ physical_driver.yaml 负责声明和校验。
 driver.py 负责暴露 PhysicalDriver 子类。
 capabilities() 负责告诉 agent 能做什么。
 execute() 负责把标准 Action 翻译成真实设备调用。
-workspace Markdown 文件负责 agent 和 watch 之间通信。
+workspace/state.db 负责 agent 和 watch 之间通信。
 JSON-RPC 负责 watch 和小智 MCP 之间通信。
 ```
 

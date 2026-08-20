@@ -28,6 +28,33 @@ def _gate(**kwargs):
     return SafetyGate(robots=robots, safety_rules={}, **kwargs)
 
 
+def _approval_gate():
+    capabilities = [
+        Capability(
+            name="move_to",
+            description="move",
+            params_schema={
+                "type": "object",
+                "required": ["x"],
+                "properties": {"x": {"type": "number"}},
+                "additionalProperties": False,
+            },
+            constraints={"bounds": {"x": [-1.0, 1.0]}},
+            requires_approval=True,
+        )
+    ]
+    robots = {
+        "arm_1": RobotRuntimeProfile(
+            robot_id="arm_1",
+            kind="arm",
+            driver="mock_arm",
+            status="connected",
+            capabilities=capabilities,
+        )
+    }
+    return SafetyGate(robots=robots, safety_rules={})
+
+
 def test_unknown_robot_rejected():
     decision = _gate().validate(Action(id="a", robot="missing", capability="move_to", params={"x": 0}))
     assert not decision.ok
@@ -66,4 +93,42 @@ def test_unmet_depends_on_rejected():
     )
     assert not decision.ok
     assert "unmet dependency" in decision.message
+
+
+def test_requires_approval_rejected_until_action_metadata_is_approved():
+    gate = _approval_gate()
+
+    missing = gate.validate(
+        Action(id="a", robot="arm_1", capability="move_to", params={"x": 0})
+    )
+    approved = gate.validate(
+        Action(
+            id="b",
+            robot="arm_1",
+            capability="move_to",
+            params={"x": 0},
+            metadata={"approval": {"required": False, "status": "approved"}},
+        )
+    )
+
+    assert not missing.ok
+    assert "requires approved human approval" in missing.message
+    assert approved.ok
+
+
+def test_approval_does_not_bypass_schema_or_bounds():
+    gate = _approval_gate()
+
+    decision = gate.validate(
+        Action(
+            id="a",
+            robot="arm_1",
+            capability="move_to",
+            params={"x": 2.0},
+            metadata={"approval": {"required": True, "status": "approved"}},
+        )
+    )
+
+    assert not decision.ok
+    assert "outside allowed bounds" in decision.message
 

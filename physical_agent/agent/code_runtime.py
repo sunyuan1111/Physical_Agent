@@ -459,7 +459,19 @@ class CodeSkillRuntime:
             executable = command_parts[0]
             args = command_parts[1:]
             if Path(executable).name.lower() in {"pytest", "pytest.exe"}:
-                command_parts = [sys.executable, "-m", "pytest", *(args or ["-q"])]
+                pytest_args = args or ["-q"]
+                pytest_temp = self.root / ".physical-agent" / "tmp" / "pytest"
+                pytest_temp.mkdir(parents=True, exist_ok=True)
+                env["TMP"] = str(pytest_temp)
+                env["TEMP"] = str(pytest_temp)
+                env["TMPDIR"] = str(pytest_temp)
+                has_basetemp = any(
+                    arg == "--basetemp" or arg.startswith("--basetemp=")
+                    for arg in pytest_args
+                )
+                if not has_basetemp:
+                    pytest_args = [*pytest_args, "--basetemp", str(pytest_temp)]
+                command_parts = [sys.executable, "-m", "pytest", *pytest_args]
             completed = subprocess.run(
                 command_parts,
                 cwd=self.root,

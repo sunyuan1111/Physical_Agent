@@ -1,0 +1,41 @@
+{
+  "name": "basic",
+  "cases": [
+    {
+      "name": "local help, polling status, refresh, and quit",
+      "useSse": false,
+      "initialState": "ready",
+      "initialConfig": "default",
+      "initialExpectOutput": ["Physical Agent TUI", "polling", "Ready."],
+      "steps": [
+        {
+          "input": "/help",
+          "covers": ["/help"],
+          "expectOutput": ["Commands:", "/task <text>", "/quit"]
+        },
+        {
+          "input": "/view status",
+          "covers": ["/view status", "polling fallback"],
+          "expectOutput": ["status", "backend: sqlite", "connection: connected via polling", "robots: 1"],
+          "expectCalls": { "health": 2, "state": 2, "config": 2 }
+        },
+        {
+          "input": "/view chat",
+          "covers": ["/view chat"],
+          "expectOutput": ["View: chat", "No chat yet. Type a message or /help."]
+        },
+        {
+          "input": "/refresh",
+          "covers": ["/refresh"],
+          "expectOutput": ["Snapshot refreshed.", "LLM connected"],
+          "expectCalls": { "health": 3, "state": 3, "config": 3, "llmSettings": 2, "testLlmSettings": 2 }
+        },
+        {
+          "input": "/quit",
+          "covers": ["/quit"],
+          "expectCalls": { "submitTask": 0, "approveAction": 0, "rejectAction": 0, "resetWorkspace": 0 }
+        }
+      ]
+    }
+  ]
+}

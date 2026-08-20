@@ -2,14 +2,16 @@
 
 [Chinese version](README.zh-CN.md)
 
-Physical Agent is a Markdown-native runtime for safe physical-world agents.
+Physical Agent is a safe runtime for physical-world agents with a SQLite active state backend and Markdown audit / migration compatibility.
+
+For the current GitHub Actions and testing policy, see [`docs/CI.zh-CN.md`](docs/CI.zh-CN.md).
 
 The core idea is deliberately small:
 
 ```text
 Terminal 1: physical-agent watch
 Terminal 2: physical-agent run --task "..."
-Workspace: Markdown files are the protocol between cognition and execution.
+Workspace: SQLite state.db is the blackboard between cognition and execution.
 ```
 
 The v1 principle is:
@@ -30,15 +32,18 @@ physical-agent watch
   owns safety enforcement
   owns action execution
 
-workspace/*.md
-  Markdown protocol and blackboard
+workspace/state.db
+  SQLite blackboard for task, capabilities, world, actions, feedback, chat, plan, memory, and log
+
+workspace/SAFETY.md
+  human-owned safety rule source read before execution
 
 physical-agent run
   reads task, capabilities, world, and feedback
   writes structured action intent
 ```
 
-`physical-agent run` never imports hardware drivers or SDKs. It only sees Markdown protocol documents. `physical-agent watch` is the only runtime that loads drivers and calls `driver.execute(action)`.
+`physical-agent run` never imports hardware drivers or SDKs. It only sees StateStore documents. `physical-agent watch` is the only runtime that loads drivers and calls `driver.execute(action)`.
 
 ## Quick Start
 
@@ -118,10 +123,10 @@ http://127.0.0.1:8765
 The main idea to watch for:
 
 ```text
-CAPABILITIES.md tells the agent what the robot can do.
-ACTIONS.md is the action queue proposed by the agent.
-FEEDBACK.md records what watch executed.
-WORLD.md stores the latest observed world state.
+capabilities tells the agent what the robot can do.
+actions is the action queue proposed by the agent.
+feedback records what watch executed.
+world stores the latest observed world state.
 ```
 
 ### Step 3: Run the Two-Terminal CLI Flow
@@ -169,20 +174,16 @@ physical-agent inspect
 
 You should see the connected mock robot, no pending actions, completed actions, and latest feedback.
 
-You can also open the Markdown protocol files directly:
+You can also inspect the workspace audit and safety files:
 
 ```text
 workspace/
-  TASK.md
-  CAPABILITIES.md
-  WORLD.md
-  ACTIONS.md
-  FEEDBACK.md
   SAFETY.md
   LOG.md
+  audit/
 ```
 
-Those files are the communication protocol between the agent and watch.
+Runtime state lives in `workspace/state.db`. `SAFETY.md` remains the file source for safety rules, `LOG.md` is a human-readable mirror, and `export-audit` creates read-only JSON views under `workspace/audit/`.
 
 ### Step 5: Run Health Checks
 
@@ -194,7 +195,7 @@ physical-agent doctor
 
 Common cases:
 
-- `No capabilities are available yet`: `physical-agent watch` has not started or did not publish `CAPABILITIES.md`.
+- `No capabilities are available yet`: `physical-agent watch` has not started or did not publish capabilities.
 - `No feedback arrived before the timeout`: the agent wrote actions, but watch is not running to execute them.
 - `Workspace is not initialized`: run `physical-agent setup` or use setup in the GUI.
 - To start over: run `physical-agent setup --force --smoke-test`.
@@ -237,7 +238,7 @@ watch validates both actions and then calls the `mock_arm` driver. No real robot
 
 After quickstart works:
 
-1. To understand communication, inspect `workspace/*.md`.
+1. To understand communication, inspect `workspace/state.db` via `physical-agent inspect` or `physical-agent export-audit`.
 2. To understand hardware onboarding, read the "Driver Contract" section.
 3. To see a Xiaozhi MCP bridge example, read `docs/xiaozhi-driver-tutorial.zh-CN.md`.
 4. To start from an SDK or GitHub repo, run `physical-agent integrate ./vendor_sdk`.
@@ -276,9 +277,37 @@ physical-agent gui --no-open
 
 The Hardware integration panel accepts a local SDK path, a GitHub repository URL, or an importable Python package name. Choose `Scaffold` for a deterministic watch-side driver template, or `LLM draft` to let the configured OpenAI-compatible model read SDK context and update `driver.py`. Both modes keep hardware execution outside the browser; the LLM draft is validated in mock mode before it is written back.
 
-## Markdown Workspace Protocol
+## StateStore And Workspace Protocol
 
-The workspace is dynamic protocol state. Each file uses YAML front matter, Markdown prose, and fenced YAML blocks for machine-readable data.
+The workspace is dynamic protocol state. Runtime state lives in SQLite:
+
+```text
+workspace/
+  state.db
+  SAFETY.md
+  LOG.md
+  artifacts/
+  uploads/
+  audit/
+```
+
+`state.db` stores task, capabilities, world, actions, feedback, chat, plan, memory, uploads, retrieval chunks, and log entries. Payloads are JSON inside SQLite tables.
+
+`SAFETY.md` is owned by humans and enforced by watch. The agent can read it but cannot bypass it.
+
+`LOG.md` is a human-readable mirror for review; SQLite log entries are the runtime source of truth.
+
+`export-audit` creates a read-only audit view under `workspace/audit/`. It is not a second backend.
+
+Legacy Markdown workspaces can be converted for one version cycle:
+
+```bash
+physical-agent migrate-md-to-sqlite --config physical-agent.yaml
+```
+
+Then set `workspace.backend: sqlite` in `physical-agent.yaml` before starting CLI/API/GUI/watch. The migration reader is one-way and migration-only; runtime Markdown backend is retired.
+
+Old Markdown protocol files used YAML front matter, Markdown prose, and fenced YAML blocks for machine-readable data:
 
 ```text
 workspace/
@@ -295,27 +324,27 @@ workspace/
   artifacts/
 ```
 
-`TASK.md` records the active task and human constraints.
+In the retired format, `TASK.md` recorded the active task and human constraints.
 
-`CAPABILITIES.md` is written by watch from loaded driver capabilities. The agent treats it as read-only.
+`CAPABILITIES.md` was written by watch from loaded driver capabilities. The agent treated it as read-only.
 
-`WORLD.md` is written by watch from driver observations. It contains robot state, objects, environment data, and artifact paths.
+`WORLD.md` was written by watch from driver observations. It contained robot state, objects, environment data, and artifact paths.
 
-`ACTIONS.md` is written by the agent. It contains pending, completed, and cancelled action boards. Watch reads pending actions and moves them after execution or safety rejection.
+`ACTIONS.md` was written by the agent. It contained pending, completed, and cancelled action boards. Watch read pending actions and moved them after execution or safety rejection.
 
-`FEEDBACK.md` is written by watch. It records latest execution feedback and history for the agent to read.
+`FEEDBACK.md` was written by watch. It recorded latest execution feedback and history for the agent to read.
 
-`SAFETY.md` is owned by humans and enforced by watch. The agent can read it but cannot bypass it.
+`SAFETY.md` is still owned by humans and enforced by watch. The agent can read it but cannot bypass it.
 
-`LOG.md` is an audit log for human review.
+`LOG.md` is still a human-readable log mirror for review.
 
-`CHAT.md` stores chat history between the human and the agent.
+`CHAT.md` stored chat history between the human and the agent.
 
-`PLAN.md` stores the current chat intent, proposed steps, and proposed actions.
+`PLAN.md` stored the current chat intent, proposed steps, and proposed actions.
 
-`MEMORY.md` stores small persistent notes that the chat agent should remember across turns.
+`MEMORY.md` stored small persistent notes that the chat agent should remember across turns.
 
-Static configuration belongs in `physical-agent.yaml`. Dynamic state belongs in the Markdown workspace.
+Static configuration belongs in `physical-agent.yaml`. Dynamic state belongs in `workspace/state.db`.
 
 ## Driver Contract
 
@@ -336,7 +365,7 @@ Important boundaries:
 - The driver only talks to `physical-agent watch`.
 - The driver does not parse Markdown.
 - The driver does not call the agent runtime.
-- The agent only sees capabilities, world state, actions, and feedback through Markdown.
+- The agent only sees capabilities, world state, actions, and feedback through StateStore.
 
 Create a new local driver scaffold:
 
@@ -365,7 +394,7 @@ physical-agent chat --message "帮我接入 ./vendor_sdk --llm"
 
 LLM driver coding uses the same `.env` settings as chat and planning. It first creates the safe scaffold, then sends SDK snippets plus the scaffold to the model, accepts only a small allowlist of generated files, validates the candidate in mock mode, and writes `llm-coding-report.md`. If the API fails or the draft does not validate, the safe scaffold remains in place.
 
-The generated driver stays in mock mode first. When LLM coding is enabled, Physical Agent can draft the SDK calls, but the runtime boundary stays the same: the generated driver is loaded only by watch, and actions still go through `ACTIONS.md`, safety validation, and `driver.execute(action)`. The LLM does not execute hardware.
+The generated driver stays in mock mode first. When LLM coding is enabled, Physical Agent can draft the SDK calls, but the runtime boundary stays the same: the generated driver is loaded only by watch, and actions still go through StateStore, safety validation, and `driver.execute(action)`. The LLM does not execute hardware.
 
 For a hardware onboarding example based on a Xiaozhi MCP bridge, see:
 
@@ -442,7 +471,7 @@ produces a `pick` action followed by a dependent `place` action.
 
 ## OpenAI-Compatible API Planner
 
-Physical Agent can use an OpenAI-compatible Chat Completions endpoint for planning while keeping the same safety boundary: the LLM only writes proposed actions to `ACTIONS.md`; watch still validates and executes them.
+Physical Agent can use an OpenAI-compatible Chat Completions endpoint for planning while keeping the same safety boundary: the LLM only writes proposed actions to StateStore; watch still validates and executes them.
 
 Create a local `.env` file. It is ignored by git.
 
@@ -457,6 +486,8 @@ Supported variable names:
 - API key: `GPT_KEY` or `OPENAI_API_KEY`
 - Base URL: `GPT_URL` or `OPENAI_BASE_URL`
 - Model: `GPT_MODEL` or `OPENAI_MODEL`
+
+LLM calls default to reasoning / deep-thinking when the provider supports it. OpenAI Responses API uses the official `reasoning` parameter; Chat Completions-compatible providers receive provider-specific thinking options only when `GPT_REASONING_EXTRA_BODY` / `OPENAI_REASONING_EXTRA_BODY` is configured, with automatic compatibility fallback when unsupported.
 
 Test the API connection:
 
@@ -498,7 +529,7 @@ physical-agent chat "write a tiny square example under test and run it"
 physical-agent chat --planner llm --auto-step --message "Please pick the red block and place it on the tray."
 ```
 
-The chat command defaults to `--planner auto`: it uses the LLM planner when `.env` contains API settings and falls back to rule-based chat otherwise. The chat agent reads `CHAT.md`, `MEMORY.md`, `CAPABILITIES.md`, `WORLD.md`, and `FEEDBACK.md`. It writes replies back to `CHAT.md`, writes its current intent to `PLAN.md`, and writes proposed actions to `ACTIONS.md`. Watch still validates and executes those actions.
+The chat command defaults to `--planner auto`: it uses the LLM planner when `.env` contains API settings and falls back to rule-based chat otherwise. The chat agent reads chat, memory, capabilities, world, and feedback from StateStore. It writes replies, current intent, and proposed actions back to StateStore. Watch still validates and executes those actions.
 
 When a chat message looks like a code task, the same `physical-agent chat` entry automatically switches into the code skill. That means prompts such as "modify this file", "write tests", "fix this bug", or "help me integrate this SDK" can trigger repository edits, local test runs, and persistent lessons in `.physical-agent/code/LESSONS.md` without creating a separate command. The physical execution boundary does not change: only `watch` can touch hardware.
 
@@ -550,6 +581,6 @@ Run the full test suite:
 pytest -q
 ```
 
-Current coverage includes Markdown protocol parsing/rendering, workspace lifecycle, driver manifest and loader behavior, hardware onboarding scaffold generation, safety validation, mock drivers, rule-based planning, watch runtime stepping, the end-to-end Markdown loop, one-command setup, doctor checks, and GUI HTTP endpoints.
+Current coverage includes Markdown protocol parsing/rendering for SAFETY/LOG/audit/migration, SQLite workspace lifecycle, driver manifest and loader behavior, hardware onboarding scaffold generation, safety validation, mock drivers, rule-based planning, watch runtime stepping, the end-to-end SQLite loop, one-command setup, doctor checks, and GUI HTTP endpoints.
 
 It also covers the chat protocol, chat memory, chat action proposals, chat auto-step execution, and the GUI chat endpoint.

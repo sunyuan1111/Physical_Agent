@@ -1,0 +1,46 @@
+{
+  "name": "chat",
+  "cases": [
+    {
+      "name": "plain chat command streams into transcript and keeps actions visible",
+      "useSse": true,
+      "initialState": "chatReady",
+      "initialConfig": "default",
+      "events": {
+        "behavior": "idle",
+        "items": [
+          { "type": "hello", "payload": { "watch_enabled": true } },
+          { "type": "state", "state": "chatReady" }
+        ]
+      },
+      "responses": {
+        "sendChatStream": [
+          {
+            "events": [
+              { "type": "delta", "payload": { "delta": "Hello" } },
+              { "type": "delta", "payload": { "delta": " from agent" } },
+              { "type": "done", "payload": { "reply": "Hello from agent", "state": { "ready": true, "chat_messages": 3 } } }
+            ],
+            "state": "chatAfterReply"
+          }
+        ]
+      },
+      "initialExpectOutput": ["Physical Agent TUI", "SSE", "Watch: enabled"],
+      "steps": [
+        {
+          "input": "hello robot",
+          "covers": ["<text chat>"],
+          "expectOutput": ["> hello robot", "assistant Hello from agent"],
+          "expectCalls": { "sendChatStream": 1 },
+          "expectState": { "chat.messages.2.content": "Hello from agent" }
+        },
+        {
+          "input": "/view actions",
+          "covers": ["/view actions"],
+          "expectOutput": ["actions", "act_001", "approval required"],
+          "expectCalls": { "health": 2, "state": 2, "config": 2 }
+        }
+      ]
+    }
+  ]
+}

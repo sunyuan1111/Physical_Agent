@@ -1,0 +1,61 @@
+{
+  "name": "config",
+  "cases": [
+    {
+      "name": "config aliases, robot registration, and reset confirmation paths",
+      "useSse": true,
+      "initialState": "ready",
+      "initialConfig": "default",
+      "events": {
+        "behavior": "idle",
+        "items": [
+          { "type": "hello", "payload": { "watch_enabled": true } }
+        ]
+      },
+      "responses": {
+        "registerRobot": [
+          { "message": "Robot sim_1 registered.", "robot_id": "sim_1", "config": "registeredRobot" }
+        ],
+        "resetWorkspace": [
+          { "error": "Reset confirmation failed. Expected true." },
+          { "message": "Workspace reset.", "state": "afterReset" }
+        ]
+      },
+      "initialExpectOutput": ["Physical Agent TUI", "SSE", "Ready.", "LLM connected"],
+      "steps": [
+        {
+          "input": "/view config",
+          "covers": ["/view config"],
+          "expectOutput": ["config", "workspace:", "backend sqlite", "arm_1"],
+          "rejectOutput": ["super-secret", "api_key", "token"]
+        },
+        {
+          "input": "/config",
+          "covers": ["/config"],
+          "expectOutput": ["View: config", "config schema:"]
+        },
+        {
+          "input": "/register-robot {\"robot_id\":\"sim_1\",\"driver\":\"mock_arm\",\"config\":{\"mode\":\"sim\"}}",
+          "covers": ["/register-robot"],
+          "expectOutput": ["Robot sim_1 registered.", "sim_1", "mock_arm"],
+          "expectCalls": { "registerRobot": 1 },
+          "expectConfig": { "config.robots.sim_1.driver": "mock_arm" }
+        },
+        {
+          "input": "/reset false",
+          "covers": ["reset confirmation failure"],
+          "expectOutput": ["Reset confirmation failed. Expected true."],
+          "expectCalls": { "resetWorkspace": 1 },
+          "expectState": { "ready": true, "backend": "sqlite" }
+        },
+        {
+          "input": "/reset true",
+          "covers": ["/reset"],
+          "expectOutput": ["Workspace reset."],
+          "expectCalls": { "resetWorkspace": 2 },
+          "expectState": { "actions.pending.length": 0 }
+        }
+      ]
+    }
+  ]
+}

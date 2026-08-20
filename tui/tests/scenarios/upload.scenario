@@ -1,0 +1,52 @@
+{
+  "name": "upload",
+  "cases": [
+    {
+      "name": "uploads view, upload success, ingest alias, and upload failure",
+      "useSse": true,
+      "initialState": "uploadReady",
+      "initialConfig": "default",
+      "events": {
+        "behavior": "idle",
+        "items": [
+          { "type": "hello", "payload": { "watch_enabled": true } }
+        ]
+      },
+      "responses": {
+        "uploadFile": [
+          { "message": "Uploaded manual.md.", "filename": "manual.md", "size_bytes": 128, "sha256": "abc123def4567890", "chunks_written": 2, "state": "afterUpload" },
+          { "message": "Uploaded notes.txt.", "filename": "notes.txt", "size_bytes": 64, "sha256": "def456abc1237890", "chunks_written": 1, "state": "afterIngest" },
+          { "error": "Upload failed: file is binary or unreadable." }
+        ]
+      },
+      "initialExpectOutput": ["Physical Agent TUI", "Ready."],
+      "steps": [
+        {
+          "input": "/view uploads",
+          "covers": ["/view uploads"],
+          "expectOutput": ["uploads", "No uploads recorded."]
+        },
+        {
+          "input": "/upload ./manual.md",
+          "covers": ["/upload"],
+          "expectOutput": ["manual.md uploaded", "chunks 2", "manual.md stored"],
+          "expectCalls": { "uploadFile": 1 },
+          "expectState": { "uploads.uploads.0.original_name": "manual.md" }
+        },
+        {
+          "input": "/ingest ./notes.txt",
+          "covers": ["/ingest"],
+          "expectOutput": ["notes.txt uploaded", "notes.txt stored"],
+          "expectCalls": { "uploadFile": 2 },
+          "expectState": { "uploads.uploads.1.original_name": "notes.txt" }
+        },
+        {
+          "input": "/upload ./bad.bin",
+          "covers": ["upload failure"],
+          "expectOutput": ["Upload failed: file is binary or unreadable."],
+          "expectCalls": { "uploadFile": 3 }
+        }
+      ]
+    }
+  ]
+}

@@ -16,13 +16,16 @@ from physical_agent.config import DEFAULT_CONFIG_NAME, load_config, write_defaul
 from physical_agent.doctor import doctor_ok, run_doctor
 from physical_agent.drivers.templates import create_driver_template
 from physical_agent.gui import run_gui
+from physical_agent.ingest.files import FileIngestionError, ingest_file as ingest_local_file
 from physical_agent.llm import OpenAICompatibleClient, OpenAICompatibleSettings
-from physical_agent.protocol.workspace import Workspace
 from physical_agent.quickstart import setup_project
+from physical_agent.state import open_state_store
+from physical_agent.state.check import run_state_check, state_check_ok
+from physical_agent.state.sqlite import migrate_markdown_workspace_to_sqlite
 from physical_agent.watch.runtime import WatchRuntime
 
 
-app = typer.Typer(help="Physical Agent: Markdown-native runtime for safe physical-world agents.")
+app = typer.Typer(help="Physical Agent: safe runtime for physical-world agents.")
 driver_app = typer.Typer(help="Driver utilities.")
 app.add_typer(driver_app, name="driver")
 skill_app = typer.Typer(help="Skill utilities.")
@@ -36,7 +39,7 @@ def init(
 ) -> None:
     config_path = write_default_config(config, overwrite=force)
     cfg = load_config(config_path)
-    workspace = Workspace(cfg.workspace_path(config_path.parent))
+    workspace = open_state_store(cfg, base_dir=config_path.parent)
     workspace.initialize(overwrite=force)
     typer.echo(f"Initialized Physical Agent project at {config_path.parent}")
     typer.echo(f"Config: {config_path}")
@@ -79,6 +82,65 @@ def doctor(
         raise typer.Exit(code=1)
 
 
+@app.command("state-check")
+def state_check(
+    config: Path = typer.Option(Path(DEFAULT_CONFIG_NAME), "--config", "-c", help="Config path."),
+) -> None:
+    cfg = load_config(config)
+    result = run_state_check(cfg, base_dir=config.resolve().parent)
+
+    typer.echo(f"Backend: {result['backend']}")
+    typer.echo(f"Backend role: {result['backend_role']}")
+    typer.echo(f"Source of truth: {result['source_of_truth']}")
+    typer.echo(f"Payload format: {result['payload_format']}")
+    typer.echo(f"Safety source: {result['safety_source']}")
+    typer.echo(f"Recommendation: {result['recommendation']}")
+    typer.echo(f"Workspace: {result['workspace_path']}")
+    typer.echo(
+        "Workspace initialized: "
+        f"{'yes' if result['workspace_initialized'] else 'no'}"
+    )
+    typer.echo(
+        "Retrieval enabled: "
+        f"{'yes' if result['retrieval_enabled'] else 'no'}"
+    )
+    typer.echo(f"Retrieval max chunks: {result['retrieval_max_chunks']}")
+    typer.echo(
+        "Retrieval max chars per chunk: "
+        f"{result['retrieval_max_chars_per_chunk']}"
+    )
+    sqlite_schema_complete = result["sqlite_schema_complete"]
+    if sqlite_schema_complete is None:
+        typer.echo("SQLite schema complete: n/a")
+        typer.echo("SQLite chunk schema complete: n/a")
+    else:
+        typer.echo(
+            "SQLite schema complete: "
+            f"{'yes' if sqlite_schema_complete else 'no'}"
+        )
+        typer.echo(
+            "SQLite chunk schema complete: "
+            f"{'yes' if result['sqlite_chunk_schema_complete'] else 'no'}"
+        )
+        missing = (
+            result["sqlite_missing_tables"]
+            + result["sqlite_missing_action_columns"]
+            + result["sqlite_missing_memory_columns"]
+            + result["sqlite_missing_upload_columns"]
+            + result["sqlite_missing_chunk_columns"]
+        )
+        if missing:
+            typer.echo(f"SQLite missing: {', '.join(missing)}")
+    typer.echo(f"Audit directory: {result['audit_dir']}")
+    typer.echo(
+        "Audit export writable: "
+        f"{'yes' if result['audit_export_writable'] else 'no'}"
+    )
+
+    if not state_check_ok(result):
+        raise typer.Exit(code=1)
+
+
 @app.command("gui")
 def gui(
     config: Path = typer.Option(Path(DEFAULT_CONFIG_NAME), "--config", "-c", help="Config path."),
@@ -87,6 +149,35 @@ def gui(
     no_open: bool = typer.Option(False, "--no-open", help="Do not open the browser automatically."),
 ) -> None:
     run_gui(config, host=host, port=port, open_browser=not no_open)
+
+
+@app.command("api")
+def api(
+    config: Path = typer.Option(Path(DEFAULT_CONFIG_NAME), "--config", "-c", help="Config path."),
+    host: str = typer.Option("127.0.0.1", "--host", help="Host to bind."),
+    port: int = typer.Option(8766, "--port", "-p", help="Port to bind."),
+    watch: bool = typer.Option(False, "--watch", help="Run the watch loop in the API process."),
+    watch_interval_s: Optional[float] = typer.Option(
+        None,
+        "--watch-interval-s",
+        help="Override the API watch loop interval in seconds.",
+    ),
+) -> None:
+    try:
+        create_app, uvicorn = _load_api_server()
+        api_app = create_app(
+            config,
+            enable_watch=watch,
+            watch_interval_s=watch_interval_s,
+        )
+    except Exception as exc:
+        from physical_agent.api.server import MissingServerDependencyError
+
+        if isinstance(exc, MissingServerDependencyError):
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+        raise
+    uvicorn.run(api_app, host=host, port=port)
 
 
 @app.command("watch")
@@ -140,7 +231,11 @@ def chat(
     ),
     message: Optional[str] = typer.Option(None, "--message", "-m", help="Send one chat message and exit."),
     config: Path = typer.Option(Path(DEFAULT_CONFIG_NAME), "--config", "-c", help="Config path."),
-    planner: Optional[str] = typer.Option("auto", "--planner", help="Chat brain: auto, llm, or rule_based."),
+    planner: Optional[str] = typer.Option(
+        "auto",
+        "--planner",
+        help="Chat brain: auto, llm, rule_based, tool_loop, or openai_tool_loop.",
+    ),
     model: Optional[str] = typer.Option(None, "--model", help="LLM model override for --planner llm."),
     auto_step: bool = typer.Option(
         False,
@@ -189,6 +284,86 @@ def chat(
             typer.echo(f"agent> Watch step executed {result['executed']} action(s).")
 
 
+@app.command("ingest-file")
+def ingest_file_command(
+    path: Path = typer.Argument(..., help="Text file to ingest into workspace/uploads."),
+    config: Path = typer.Option(Path(DEFAULT_CONFIG_NAME), "--config", "-c", help="Config path."),
+    tag: Optional[list[str]] = typer.Option(
+        None,
+        "--tag",
+        help="Optional tag to attach to the upload memory note. May be repeated.",
+    ),
+    importance: int = typer.Option(0, "--importance", help="Structured memory importance."),
+) -> None:
+    config_root = config.resolve().parent
+    cfg = load_config(config)
+    workspace = open_state_store(cfg, base_dir=config_root)
+    workspace.initialize()
+    try:
+        result = ingest_local_file(
+            path,
+            workspace,
+            tags=tag,
+            importance=importance,
+            max_chars_per_chunk=cfg.memory.retrieval.max_chars_per_chunk,
+        )
+    except FileIngestionError as exc:
+        if exc.metadata:
+            typer.echo(f"Upload status: {exc.metadata.get('status')}")
+            typer.echo(f"SHA256: {exc.metadata.get('sha256')}")
+        typer.echo(f"File ingestion failed: {exc}")
+        raise typer.Exit(code=1) from exc
+
+    metadata = result["metadata"]
+    typer.echo("File ingested.")
+    typer.echo(f"Stored path: {metadata['stored_path']}")
+    typer.echo(f"SHA256: {metadata['sha256']}")
+    typer.echo(f"Memory written: {'yes' if result['memory_written'] else 'no'}")
+    typer.echo(f"Chunks written: {result['chunks_written']}")
+    typer.echo(f"Truncated: {'yes' if result['truncated'] else 'no'}")
+
+
+@app.command("search-memory")
+def search_memory(
+    query: str = typer.Argument(..., help="Local keyword query for indexed memory/upload chunks."),
+    config: Path = typer.Option(Path(DEFAULT_CONFIG_NAME), "--config", "-c", help="Config path."),
+    limit: int = typer.Option(5, "--limit", "-n", help="Maximum chunks to return."),
+    tag: Optional[list[str]] = typer.Option(
+        None,
+        "--tag",
+        help="Require a tag on returned chunks. May be repeated.",
+    ),
+    source_type: Optional[str] = typer.Option(
+        None,
+        "--source-type",
+        help="Restrict to upload or memory chunks.",
+    ),
+) -> None:
+    config_root = config.resolve().parent
+    cfg = load_config(config)
+    workspace = open_state_store(cfg, base_dir=config_root)
+    if not workspace.exists():
+        typer.echo("Workspace is not initialized. Run `physical-agent init` first.")
+        raise typer.Exit(code=1)
+
+    results = workspace.query_memory_chunks(
+        query,
+        limit=limit,
+        tags=tag,
+        source_type=source_type,
+    )
+    typer.echo(f"Found {len(results)} chunk(s).")
+    for item in results:
+        tags = ", ".join(item.get("tags", [])) or "-"
+        typer.echo(
+            f"- score={item.get('score', 0)} "
+            f"{item.get('source_type')}:{item.get('source_id')}#"
+            f"{item.get('chunk_index')} "
+            f"trust={item.get('trust_level')} tags={tags}"
+        )
+        typer.echo(_indent_text(_truncate_text(item.get("content", ""), 320)))
+
+
 def _echo_code_result(code_result: dict[str, Any], *, prefix: str = "") -> None:
     typer.echo(f"{prefix}Code skill result:")
     if code_result.get("intent_kind") == "code_run":
@@ -200,6 +375,31 @@ def _echo_code_result(code_result: dict[str, Any], *, prefix: str = "") -> None:
         text = yaml.safe_dump(code_result, sort_keys=False).strip()
         for line in text.splitlines():
             typer.echo(f"{prefix}{line}")
+
+
+def _truncate_text(text: Any, limit: int) -> str:
+    value = " ".join(str(text or "").split())
+    if len(value) <= limit:
+        return value
+    return value[: max(0, limit - 3)].rstrip() + "..."
+
+
+def _indent_text(text: str) -> str:
+    return "\n".join(f"  {line}" for line in (text or "").splitlines() or [""])
+
+
+def _load_api_server():
+    from physical_agent.api.server import (
+        MissingServerDependencyError,
+        SERVER_EXTRA_HINT,
+        create_app,
+    )
+
+    try:
+        import uvicorn
+    except ImportError as exc:
+        raise MissingServerDependencyError(SERVER_EXTRA_HINT) from exc
+    return create_app, uvicorn
 
 
 @app.command("llm-test")
@@ -225,7 +425,7 @@ def inspect(
     config: Path = typer.Option(Path(DEFAULT_CONFIG_NAME), "--config", "-c", help="Config path."),
 ) -> None:
     cfg = load_config(config)
-    workspace = Workspace(cfg.workspace_path(config.resolve().parent))
+    workspace = open_state_store(cfg, base_dir=config.resolve().parent)
     if not workspace.exists():
         typer.echo("Workspace is not initialized. Run `physical-agent init` first.")
         raise typer.Exit(code=1)
@@ -235,7 +435,10 @@ def inspect(
     actions = workspace.read_actions()
     feedback = workspace.read_feedback()
 
-    typer.echo("Robots:")
+    typer.echo(f"Backend: {cfg.workspace.backend}")
+    typer.echo(f"Workspace: {workspace.path}")
+
+    typer.echo("\nRobots:")
     robots = capabilities.get("robots", {})
     if robots:
         for robot_id, robot in robots.items():
@@ -253,6 +456,80 @@ def inspect(
             typer.echo(f"- {action.id}: {action.robot}.{action.capability}")
     else:
         typer.echo("- none")
+
+
+@app.command("export-audit")
+def export_audit(
+    config: Path = typer.Option(Path(DEFAULT_CONFIG_NAME), "--config", "-c", help="Config path."),
+    out: Optional[Path] = typer.Option(
+        None,
+        "--out",
+        "-o",
+        help="Audit output directory. Defaults to workspace/audit.",
+    ),
+) -> None:
+    config_root = config.resolve().parent
+    cfg = load_config(config)
+    workspace = open_state_store(cfg, base_dir=config_root)
+    if not workspace.exists():
+        typer.echo("Workspace is not initialized. Run `physical-agent init` first.")
+        raise typer.Exit(code=1)
+
+    out_dir = None
+    if out is not None:
+        out_dir = out if out.is_absolute() else config_root / out
+    result = workspace.export_human_view(out_dir)
+
+    typer.echo("Exported audit view.")
+    typer.echo(f"Backend: {result['backend']}")
+    typer.echo(f"Workspace: {result['workspace_path']}")
+    typer.echo(f"Audit: {result['out_dir']}")
+    typer.echo(f"Manifest: {result['manifest']}")
+
+
+@app.command("migrate-md-to-sqlite")
+def migrate_md_to_sqlite(
+    config: Path = typer.Option(Path(DEFAULT_CONFIG_NAME), "--config", "-c", help="Config path."),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        help="Replace an existing workspace/state.db file.",
+    ),
+) -> None:
+    cfg = load_config(config, allow_retired_markdown=True)
+    workspace_path = cfg.workspace_path(config.resolve().parent)
+    try:
+        result = migrate_markdown_workspace_to_sqlite(
+            workspace_path,
+            overwrite=overwrite,
+        )
+    except FileExistsError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=1) from exc
+    except FileNotFoundError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    typer.echo("Migrated Markdown workspace to SQLite.")
+    typer.echo(f"Workspace: {result['workspace_path']}")
+    typer.echo(f"SQLite DB: {result['db_path']}")
+    typer.echo(
+        "Actions: "
+        f"{result['actions']['pending']} pending, "
+        f"{result['actions']['completed']} completed, "
+        f"{result['actions']['cancelled']} cancelled"
+    )
+    typer.echo(
+        f"Chat messages: {result['chat_messages']}; "
+        f"memory notes: {result['memory_notes']}; "
+        f"uploads: {result['uploads']}; "
+        f"log entries: {result['log_entries']}"
+    )
+    typer.echo(
+        "Config was not changed. To use this SQLite database, set "
+        "`workspace.backend: sqlite` in physical-agent.yaml before starting "
+        "CLI/API/GUI/watch."
+    )
 
 
 @skill_app.command("list")

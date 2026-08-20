@@ -7,6 +7,18 @@ dist/
 build/
 workspace/
 .codex-artifacts/
+.tmp/
 .physical-agent/
 /physical-agent.yaml
 .env
+**/.llm.json
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/playwright-report/
+frontend/test-results/
+tui/node_modules/
+tui/dist/
+
+# LLM trace contains prompt plaintext (explicit; workspace/ already covers it)
+workspace/llm-trace/

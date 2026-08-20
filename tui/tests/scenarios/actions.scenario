@@ -1,0 +1,57 @@
+{
+  "name": "actions",
+  "cases": [
+    {
+      "name": "task submission, approve, reject, and action view",
+      "useSse": true,
+      "initialState": "actionsReady",
+      "initialConfig": "default",
+      "events": {
+        "behavior": "idle",
+        "items": [
+          { "type": "hello", "payload": { "watch_enabled": true } }
+        ]
+      },
+      "responses": {
+        "submitTask": [
+          { "message": "Task accepted: pick the red block.", "state": "afterTask" }
+        ],
+        "approveAction": [
+          { "message": "Action act_001 approved.", "state": "afterApprove" }
+        ],
+        "rejectAction": [
+          { "message": "Action act_002 rejected.", "state": "afterReject" }
+        ]
+      },
+      "initialExpectOutput": ["Physical Agent TUI", "act_001"],
+      "steps": [
+        {
+          "input": "/task pick the red block",
+          "covers": ["/task"],
+          "expectOutput": ["Task accepted: pick the red block.", "act_task", "approval unknown"],
+          "expectCalls": { "submitTask": 1 },
+          "expectState": { "actions.pending.2.id": "act_task" }
+        },
+        {
+          "input": "/approve act_001",
+          "covers": ["/approve"],
+          "expectOutput": ["Action act_001 approved.", "act_001", "approved"],
+          "expectCalls": { "approveAction": 1 },
+          "expectState": { "actions.pending.0.metadata.approval.status": "approved" }
+        },
+        {
+          "input": "/reject act_002 unsafe workspace",
+          "covers": ["/reject"],
+          "expectOutput": ["Action act_002 rejected.", "act_002", "rejected"],
+          "expectCalls": { "rejectAction": 1 },
+          "expectState": { "actions.cancelled.0.id": "act_002" }
+        },
+        {
+          "input": "/view actions",
+          "covers": ["/view actions"],
+          "expectOutput": ["actions", "act_001", "act_task"]
+        }
+      ]
+    }
+  ]
+}

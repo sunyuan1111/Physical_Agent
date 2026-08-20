@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Run full pytest matrix"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # GitHub Actions treats env keys as case-insensitive in workflow YAML.
+  # Keep one spelling here; declaring HTTP_PROXY and http_proxy together
+  # makes the workflow invalid before jobs start.
+  HTTP_PROXY: ""
+  HTTPS_PROXY: ""
+  ALL_PROXY: ""
+  NO_PROXY: "127.0.0.1,localhost"
+  PA_LLM_TRACE: "0"
+
+jobs:
+  python-smoke:
+    name: Python safety smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend
+        run: python -m pip install -e ".[dev,server,llm]"
+      - name: Run safety smoke tests
+        run: |
+          python -m pytest -q \
+            tests/test_safety_boundaries.py \
+            tests/test_safety.py \
+            tests/test_api_server.py::test_api_requests_do_not_instantiate_watch_or_execute_driver \
+            tests/test_api_watch_events.py::test_http_auto_step_like_fields_do_not_start_watch \
+            tests/test_backend_matrix.py::test_default_init_setup_and_state_check_use_sqlite_with_safety_file \
+            tests/test_state_store.py::test_open_state_store_defaults_to_sqlite \
+            tests/test_watch_runtime.py::test_watch_runtime_step_executes_action
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+  tui:
+    name: Ink TUI advisory
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: tui/package-lock.json
+      - name: Install TUI
+        working-directory: tui
+        run: npm ci
+      - name: Build TUI
+        working-directory: tui
+        run: npm run build
+      - name: Test TUI
+        working-directory: tui
+        run: npm test
+
+  e2e:
+    name: Playwright dashboard advisory
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install backend
+        run: python -m pip install -e ".[server,llm]"
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Run Playwright
+        working-directory: frontend
+        run: npm run test:e2e
+
+  python-full:
+    name: Python full pytest (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.full == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install backend
+        run: python -m pip install -e ".[dev,server,llm]"
+      - name: Run full pytest
+        run: python -m pytest -q

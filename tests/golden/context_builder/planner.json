@@ -1,0 +1,112 @@
+{
+  "max_tokens": 1200,
+  "messages": [
+    {
+      "content": "You convert physical-world tasks into JSON action intents. Return only JSON with this shape: {\"actions\":[{\"robot\":\"...\",\"capability\":\"...\",\"params\":{},\"reason\":\"...\",\"depends_on\":[],\"metadata\":{\"expected\":[{\"path\":\"...\",\"op\":\"eq\",\"value\":\"...\"}]}}],\"refusal_reason\":\"optional reason when empty\"} metadata.expected is optional and only describes deterministic post-execution checks; it is not a safety rule. Use only robots and capabilities present in the provided capability document. Do not invent hardware calls. Do not include Markdown.",
+      "role": "system"
+    },
+    {
+      "payload": {
+        "capabilities": {
+          "metadata": {
+            "owner": "watch",
+            "revision": 2,
+            "schema": "physical-agent/capabilities/v1"
+          },
+          "robots": {
+            "arm_1": {
+              "capabilities": [
+                {
+                  "description": "Place an object.",
+                  "name": "place",
+                  "params_schema": {
+                    "properties": {
+                      "target": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "target"
+                    ],
+                    "type": "object"
+                  },
+                  "requires_approval": true
+                },
+                {
+                  "description": "Inspect the workspace.",
+                  "name": "observe",
+                  "params_schema": {
+                    "properties": {},
+                    "type": "object"
+                  },
+                  "requires_approval": false
+                }
+              ],
+              "driver": "mock_arm",
+              "kind": "arm",
+              "requires_approval": true,
+              "status": "connected"
+            }
+          }
+        },
+        "task": "pick the red block",
+        "world": {
+          "metadata": {
+            "owner": "watch",
+            "revision": 2,
+            "schema": "physical-agent/world/v1"
+          },
+          "observation": {
+            "artifacts": [],
+            "environment": {},
+            "objects": {
+              "red_block": {
+                "location": "table",
+                "raw": {
+                  "camera_blob": "drop when summarized"
+                },
+                "status": "visible",
+                "type": "block"
+              }
+            },
+            "raw": {
+              "frame": "drop when summarized"
+            },
+            "robots": {
+              "arm_1": {
+                "status": "idle"
+              }
+            },
+            "summary": "Red block is on the table."
+          },
+          "state": {
+            "artifacts": [],
+            "environment": {},
+            "objects": {
+              "red_block": {
+                "location": "table",
+                "raw": {
+                  "camera_blob": "drop when summarized"
+                },
+                "status": "visible",
+                "type": "block"
+              }
+            },
+            "raw": {
+              "frame": "drop when summarized"
+            },
+            "robots": {
+              "arm_1": {
+                "status": "idle"
+              }
+            }
+          },
+          "summary": "Red block is on the table."
+        }
+      },
+      "role": "user"
+    }
+  ],
+  "purpose": "planner",
+  "temperature": 0.0
+}

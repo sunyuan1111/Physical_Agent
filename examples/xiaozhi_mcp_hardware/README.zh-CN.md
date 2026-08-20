@@ -78,6 +78,23 @@ XIAOZHI_MCP_PATH=/ws
 有些设备只接受工具调用，但不会对 `initialize` / `tools/list` 返回标准响应。遇到这种情况，保持
 `wait_for_responses: false`，让 watch 使用“只发送不等待回包”的模式。
 
+WebSocket reconnect 是可选能力，默认关闭。如需开启通信层重连，可以在 robot config 中写：
+
+```yaml
+reconnect_policy:
+  enabled: true
+  max_retries: 3
+  backoff_base_ms: 250
+  backoff_cap_ms: 5000
+  jitter_ms: 0
+```
+
+reconnect 不会重放旧动作；transport 正在重连时提交的动作会 fail-fast 并写失败反馈。重连成功只说明通信恢复，之后仍要通过 `observe`/`health` 确认机器人状态。
+
+从 D1 开始，`ws` 模式的底层连接、握手、frame 读写由共享的
+`physical_agent.drivers.transport.WebSocketTransport` 提供。这个 transport
+只在 watch/driver 侧使用；agent、API、GUI 仍然只写 proposal，不直接连接硬件。
+
 如果你的接入方式是 HTTP JSON-RPC 网关，再使用 `http` 模式：
 
 先把 `.env.example` 复制成 `.env`，再填写真实地址：
@@ -87,7 +104,9 @@ XIAOZHI_MCP_ENDPOINT=http://你的MCP网关地址
 XIAOZHI_MCP_TOKEN=如果需要鉴权就填
 ```
 
-如果你的 MCP 网关不是 HTTP JSON-RPC，而是 WebSocket、串口或别的协议，建议先加一个很薄的桥接层，把外部协议转换成这个示例 driver 里使用的 JSON-RPC 调用格式。
+如果你的硬件是串口或其它非 WebSocket/HTTP 连接，本轮 D1 还没有实现
+`SerialTransport`、`ServoBus`、硬件看门狗或 E-stop 策略。请先保持请求侧不变，
+把协议适配放在 watch 侧 driver 或临时桥接层里。
 
 
 ## 4. 先做一次检查
@@ -369,7 +388,7 @@ physical-agent setup --config examples/xiaozhi_mcp_hardware/physical-agent.yaml 
 
 1. 保持 `physical_driver.yaml` 和 `driver.py` 这两个核心文件。
 2. 修改 `tools`，让它匹配你的设备真实能力。
-3. 修改 `observe`、`say`、`set_light` 为你的动作集合。
-4. 如果需要，把 `_post_jsonrpc()` 换成你真实的通信层。
+3. 修改 `observe`、`set_volume`、`otto_action`、`home`、`stop` 为你的动作集合。
+4. 如果需要自定义通信层，也要放在 watch 侧 driver 内；当前 WebSocket 路径已经复用共享 `WebSocketTransport`。
 
 这就是 Physical Agent 的 Two-file Driver Protocol。

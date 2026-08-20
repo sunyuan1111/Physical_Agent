@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 from pathlib import Path
+import threading
 from typing import Any
 
 from physical_agent.protocol.markdown import parse_front_matter, render_front_matter
+from physical_agent.protocol.chat_summary import compact_chat_messages
+from physical_agent.protocol.memory import filter_memory_notes, normalize_memory_note
 from physical_agent.protocol.parsers import (
     parse_actions,
     parse_capabilities,
@@ -29,6 +33,26 @@ from physical_agent.protocol.renderers import (
     render_world,
 )
 from physical_agent.protocol.schemas import Action, ChatMessage, ChatPlan, Observation
+from physical_agent.protocol.retrieval import (
+    chunk_source_id_for_memory_note,
+    make_chunks_for_text,
+    normalize_memory_chunk,
+    query_memory_chunks,
+)
+
+
+_LOG_LOCKS: dict[Path, threading.Lock] = {}
+_LOG_LOCKS_GUARD = threading.Lock()
+
+
+def _log_lock(path: Path) -> threading.Lock:
+    key = path.resolve()
+    with _LOG_LOCKS_GUARD:
+        lock = _LOG_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _LOG_LOCKS[key] = lock
+        return lock
 
 
 class Workspace:
@@ -48,6 +72,7 @@ class Workspace:
     def __init__(self, path: str | Path):
         self.path = Path(path).resolve()
         self.artifacts_path = self.path / "artifacts"
+        self.uploads_path = self.path / "uploads"
 
     def file(self, name: str) -> Path:
         return self.path / self.filenames[name]
@@ -55,6 +80,7 @@ class Workspace:
     def initialize(self, *, overwrite: bool = False) -> None:
         self.path.mkdir(parents=True, exist_ok=True)
         self.artifacts_path.mkdir(parents=True, exist_ok=True)
+        self.uploads_path.mkdir(parents=True, exist_ok=True)
         defaults = {
             "task": render_task("No active task."),
             "capabilities": render_capabilities({}),
@@ -170,10 +196,35 @@ class Workspace:
     def read_safety(self) -> dict[str, Any]:
         return parse_safety(self.file("safety").read_text(encoding="utf-8"))
 
-    def write_chat(self, messages: list[ChatMessage | dict[str, Any]]) -> None:
+    def write_chat(
+        self,
+        messages: list[ChatMessage | dict[str, Any]],
+        *,
+        running_summary: str | None = None,
+        compact: bool = True,
+    ) -> None:
         target = self.file("chat")
+        if running_summary is None and target.exists():
+            try:
+                running_summary = self.read_chat().get("running_summary", "")
+            except Exception:
+                running_summary = ""
+        summary = running_summary or ""
+        output_messages = [
+            item if isinstance(item, ChatMessage) else ChatMessage.model_validate(item)
+            for item in messages
+        ]
+        if compact:
+            summary, output_messages = compact_chat_messages(
+                output_messages,
+                running_summary=summary,
+            )
         target.write_text(
-            render_chat(messages, revision=self._next_revision(target)),
+            render_chat(
+                output_messages,
+                running_summary=summary,
+                revision=self._next_revision(target),
+            ),
             encoding="utf-8",
         )
 
@@ -215,29 +266,254 @@ class Workspace:
             render_memory(notes, revision=self._next_revision(target)),
             encoding="utf-8",
         )
+        self._replace_memory_note_chunks(notes)
 
-    def read_memory(self) -> dict[str, Any]:
-        return parse_memory(self.file("memory").read_text(encoding="utf-8"))
+    def read_memory(
+        self,
+        *,
+        kind: str | None = None,
+        source: str | None = None,
+        limit: int | None = None,
+        tags: list[str] | str | None = None,
+    ) -> dict[str, Any]:
+        payload = parse_memory(self.file("memory").read_text(encoding="utf-8"))
+        payload["notes"] = filter_memory_notes(
+            payload.get("notes", []),
+            kind=kind,
+            source=source,
+            limit=limit,
+            tags=tags,
+        )
+        return payload
 
-    def append_memory_note(self, content: str, *, source: str = "chat") -> dict[str, Any]:
+    def append_memory_note(
+        self,
+        content: str,
+        *,
+        source: str = "chat",
+        kind: str = "note",
+        tags: list[str] | str | None = None,
+        importance: int = 0,
+    ) -> dict[str, Any]:
         notes = list(self.read_memory()["notes"])
         timestamp = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        note = {"content": content, "source": source, "created_at": timestamp}
+        note = normalize_memory_note(
+            {
+                "content": content,
+                "source": source,
+                "kind": kind,
+                "tags": tags,
+                "importance": importance,
+                "created_at": timestamp,
+            }
+        )
         notes.append(note)
         self.write_memory(notes)
         return note
 
+    def read_uploads(self) -> dict[str, Any]:
+        manifest = self.uploads_path / "manifest.json"
+        default = {
+            "metadata": {
+                "schema": "physical-agent/uploads/v1",
+                "owner": "human",
+                "revision": 1,
+            },
+            "uploads": [],
+        }
+        if not manifest.exists():
+            return default
+        try:
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return default
+        if not isinstance(payload, dict):
+            return default
+        metadata = dict(payload.get("metadata") or {})
+        metadata.setdefault("schema", "physical-agent/uploads/v1")
+        metadata.setdefault("owner", "human")
+        try:
+            metadata["revision"] = int(metadata.get("revision") or 1)
+        except (TypeError, ValueError):
+            metadata["revision"] = 1
+        uploads = payload.get("uploads")
+        if not isinstance(uploads, list):
+            uploads = []
+        return {"metadata": metadata, "uploads": [item for item in uploads if isinstance(item, dict)]}
+
+    def append_upload_metadata(self, metadata: dict[str, Any]) -> dict[str, Any]:
+        self.uploads_path.mkdir(parents=True, exist_ok=True)
+        current = self.read_uploads()
+        upload = dict(metadata)
+        uploads = list(current.get("uploads", []))
+        uploads.append(upload)
+        doc_metadata = dict(current.get("metadata") or {})
+        try:
+            revision = int(doc_metadata.get("revision") or 1) + 1
+        except (TypeError, ValueError):
+            revision = 2
+        doc_metadata.update(
+            {
+                "schema": "physical-agent/uploads/v1",
+                "owner": "human",
+                "revision": revision,
+            }
+        )
+        manifest = self.uploads_path / "manifest.json"
+        manifest.write_text(
+            json.dumps(
+                {"metadata": doc_metadata, "uploads": uploads},
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return upload
+
+    def read_memory_chunks(self) -> dict[str, Any]:
+        manifest = self.uploads_path / "chunks.json"
+        default = {
+            "metadata": {
+                "schema": "physical-agent/retrieval-chunks/v1",
+                "owner": "agent",
+                "revision": 1,
+            },
+            "chunks": [],
+        }
+        if not manifest.exists():
+            return default
+        try:
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return default
+        if not isinstance(payload, dict):
+            return default
+        metadata = dict(payload.get("metadata") or {})
+        metadata.setdefault("schema", "physical-agent/retrieval-chunks/v1")
+        metadata.setdefault("owner", "agent")
+        try:
+            metadata["revision"] = int(metadata.get("revision") or 1)
+        except (TypeError, ValueError):
+            metadata["revision"] = 1
+        chunks = payload.get("chunks")
+        if not isinstance(chunks, list):
+            chunks = []
+        return {
+            "metadata": metadata,
+            "chunks": [
+                normalize_memory_chunk(item)
+                for item in chunks
+                if isinstance(item, dict)
+            ],
+        }
+
+    def append_memory_chunk(self, chunk: dict[str, Any]) -> dict[str, Any]:
+        self.uploads_path.mkdir(parents=True, exist_ok=True)
+        normalized = normalize_memory_chunk(chunk)
+        current = self.read_memory_chunks()
+        chunks = [
+            item
+            for item in current.get("chunks", [])
+            if not _same_chunk_identity(item, normalized)
+        ]
+        chunks.append(normalized)
+        self._write_chunks_manifest(chunks, current.get("metadata", {}))
+        return normalized
+
+    def query_memory_chunks(
+        self,
+        query: str,
+        *,
+        limit: int = 5,
+        tags: list[str] | str | None = None,
+        source_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return query_memory_chunks(
+            self.read_memory_chunks().get("chunks", []),
+            query,
+            limit=limit,
+            tags=tags,
+            source_type=source_type,
+        )
+
     def append_log(self, message: str, *, actor: str | None = None) -> None:
         target = self.file("log")
-        if target.exists():
-            doc = parse_front_matter(target.read_text(encoding="utf-8"))
-            metadata = dict(doc.metadata)
-            body = doc.body.rstrip() + "\n\n"
-            metadata["revision"] = doc.revision + 1
-        else:
-            metadata = {"schema": "physical-agent/log/v1", "owner": "system", "revision": 1}
-            body = "# Physical Agent Log\n\n"
-        timestamp = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        prefix = f"**{actor}**: " if actor else ""
-        body += f"## {timestamp}\n\n{prefix}{message}\n"
-        target.write_text(render_front_matter(metadata, body), encoding="utf-8")
+        with _log_lock(target):
+            if target.exists():
+                doc = parse_front_matter(target.read_text(encoding="utf-8"))
+                metadata = dict(doc.metadata)
+                body = doc.body.rstrip() + "\n\n"
+                metadata["revision"] = doc.revision + 1
+            else:
+                metadata = {"schema": "physical-agent/log/v1", "owner": "system", "revision": 1}
+                body = "# Physical Agent Log\n\n"
+            timestamp = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            prefix = f"**{actor}**: " if actor else ""
+            body += f"## {timestamp}\n\n{prefix}{message}\n"
+            target.write_text(render_front_matter(metadata, body), encoding="utf-8")
+
+    def _replace_memory_note_chunks(self, notes: list[dict[str, Any]]) -> None:
+        current = self.read_memory_chunks()
+        preserved = [
+            item
+            for item in current.get("chunks", [])
+            if item.get("source_type") != "memory"
+        ]
+        memory_chunks: list[dict[str, Any]] = []
+        for note in notes:
+            normalized_note = normalize_memory_note(note)
+            if normalized_note.get("source") == "upload":
+                continue
+            source_id = chunk_source_id_for_memory_note(normalized_note)
+            memory_chunks.extend(
+                make_chunks_for_text(
+                    normalized_note["content"],
+                    source_type="memory",
+                    source_id=source_id,
+                    tags=normalized_note["tags"],
+                    trust_level="trusted",
+                    created_at=normalized_note["created_at"],
+                )
+            )
+        self._write_chunks_manifest(preserved + memory_chunks, current.get("metadata", {}))
+
+    def _write_chunks_manifest(
+        self,
+        chunks: list[dict[str, Any]],
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        self.uploads_path.mkdir(parents=True, exist_ok=True)
+        doc_metadata = dict(metadata or {})
+        try:
+            revision = int(doc_metadata.get("revision") or 1) + 1
+        except (TypeError, ValueError):
+            revision = 2
+        doc_metadata.update(
+            {
+                "schema": "physical-agent/retrieval-chunks/v1",
+                "owner": "agent",
+                "revision": revision,
+            }
+        )
+        manifest = self.uploads_path / "chunks.json"
+        manifest.write_text(
+            json.dumps(
+                {
+                    "metadata": doc_metadata,
+                    "chunks": [normalize_memory_chunk(item) for item in chunks],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+
+def _same_chunk_identity(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    return (
+        left.get("source_type") == right.get("source_type")
+        and left.get("source_id") == right.get("source_id")
+        and left.get("chunk_index") == right.get("chunk_index")
+    )

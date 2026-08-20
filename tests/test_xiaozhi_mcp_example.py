@@ -19,7 +19,7 @@ def test_xiaozhi_example_files_exist():
 
 def test_xiaozhi_example_watch_runtime_setup(monkeypatch, tmp_path):
     class FakeWsClient:
-        def __init__(self, url, *, connect_timeout_s, timeout_s):
+        def __init__(self, url, *, connect_timeout_s, timeout_s, **_kwargs):
             self.url = url
             self.is_connected = False
             self._next_id = 1

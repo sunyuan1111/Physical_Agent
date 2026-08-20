@@ -1,13 +1,55 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import re
 from typing import Any
 
+from physical_agent.agent.context_builder import (
+    DEFAULT_CONTEXT_BUDGET,
+    ContextBudget,
+    build_planner_context,
+)
 from physical_agent.agent.planner import Planner
 from physical_agent.agent.rule_based import RuleBasedPlanner
 from physical_agent.llm import OpenAICompatibleClient, OpenAICompatibleSettings
+from physical_agent.protocol.expectations import EXPECTED_JSON_SCHEMA
 from physical_agent.protocol.schemas import Action
+
+
+ACTION_PLAN_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["actions"],
+    "properties": {
+        "refusal_reason": {"type": "string"},
+        "actions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["robot", "capability", "params", "reason", "depends_on"],
+                "properties": {
+                    "robot": {"type": "string"},
+                    "capability": {"type": "string"},
+                    "params": {"type": "object", "additionalProperties": True},
+                    "reason": {"type": "string"},
+                    "depends_on": {
+                        "type": "array",
+                        "items": {"type": ["string", "integer"]},
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "additionalProperties": True,
+                        "properties": {
+                            "expected": EXPECTED_JSON_SCHEMA,
+                        },
+                    },
+                },
+            },
+        }
+    },
+}
 
 
 class LLMPlanner(Planner):
@@ -17,13 +59,18 @@ class LLMPlanner(Planner):
         settings: OpenAICompatibleSettings | None = None,
         env_file: str = ".env",
         model: str | None = None,
+        workspace_path: str | Path | None = None,
+        context_budget: ContextBudget = DEFAULT_CONTEXT_BUDGET,
     ):
         self.settings = settings or OpenAICompatibleSettings.from_env(
             env_file=env_file,
             model=model,
+            workspace_path=workspace_path,
         )
         self.client = OpenAICompatibleClient(self.settings)
         self.fallback = RuleBasedPlanner()
+        self.last_refusal_reason: str | None = None
+        self.context_budget = context_budget
 
     def plan(
         self,
@@ -32,36 +79,23 @@ class LLMPlanner(Planner):
         capabilities: dict[str, Any],
         world: dict[str, Any],
     ) -> list[Action]:
-        content = self.client.chat(
-            [
-                {
-                    "role": "system",
-                    "content": (
-                        "You convert physical-world tasks into JSON action intents. "
-                        "Return only JSON with this shape: "
-                        '{"actions":[{"robot":"...","capability":"...","params":{},'
-                        '"reason":"...","depends_on":[]}]} '
-                        "Use only robots and capabilities present in the provided capability document. "
-                        "Do not invent hardware calls. Do not include Markdown."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "task": task,
-                            "capabilities": _json_safe(capabilities),
-                            "world": _json_safe(world),
-                        },
-                        ensure_ascii=True,
-                    ),
-                },
-            ],
-            temperature=0.0,
-            max_tokens=1200,
+        context = build_planner_context(
+            task,
+            capabilities=capabilities,
+            world=world,
+            budget=self.context_budget,
         )
-        payload = _extract_json(content)
+        payload = self.client.structured_json(
+            context.messages,
+            schema=ACTION_PLAN_SCHEMA,
+            schema_name="physical_action_plan",
+            temperature=context.temperature,
+            max_tokens=context.max_tokens,
+            metadata={"physical_agent_surface": "planner"},
+        )
         actions_data = payload.get("actions", [])
+        refusal_reason = payload.get("refusal_reason")
+        self.last_refusal_reason = str(refusal_reason) if refusal_reason else None
         if not isinstance(actions_data, list):
             raise ValueError("LLM planner response must contain an actions list.")
         normalized_items: list[dict[str, Any]] = []

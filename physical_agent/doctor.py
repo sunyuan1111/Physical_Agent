@@ -8,7 +8,7 @@ from typing import Any
 from physical_agent.config import DEFAULT_CONFIG_NAME, load_config
 from physical_agent.drivers.loader import load_driver
 from physical_agent.protocol.markdown import parse_front_matter
-from physical_agent.protocol.workspace import Workspace
+from physical_agent.state import open_state_store
 
 
 @dataclass(frozen=True)
@@ -51,7 +51,7 @@ def run_doctor(config_path: str | Path = DEFAULT_CONFIG_NAME) -> list[DoctorChec
         checks.append(DoctorCheck("config-parse", False, str(exc)))
         return checks
 
-    workspace = Workspace(config.workspace_path(path.parent))
+    workspace = open_state_store(config, base_dir=path.parent)
     checks.append(
         DoctorCheck(
             "workspace",
@@ -61,7 +61,7 @@ def run_doctor(config_path: str | Path = DEFAULT_CONFIG_NAME) -> list[DoctorChec
     )
 
     if workspace.exists():
-        for name in Workspace.filenames:
+        for name in workspace.filenames:
             try:
                 if name == "log":
                     parse_front_matter(workspace.file(name).read_text(encoding="utf-8"))

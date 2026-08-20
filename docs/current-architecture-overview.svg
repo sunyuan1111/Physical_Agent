@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="860" viewBox="0 0 1240 860" role="img" aria-labelledby="title desc">
+  <title id="title">Physical Agent current architecture overview</title>
+  <desc id="desc">Current implemented architecture showing frontend, API, agent, state backends, watch safety boundary, drivers, and hardware.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f6f8fb; }
+      .band { fill: #ffffff; stroke: #d6dde8; stroke-width: 1.4; }
+      .box { fill: #ffffff; stroke: #8fa1b8; stroke-width: 1.5; rx: 8; }
+      .boxBlue { fill: #eef6ff; stroke: #5f8cc5; stroke-width: 1.5; rx: 8; }
+      .boxGreen { fill: #eefaf2; stroke: #5aa876; stroke-width: 1.5; rx: 8; }
+      .boxOrange { fill: #fff6e8; stroke: #d79236; stroke-width: 1.5; rx: 8; }
+      .boxRed { fill: #fff1f1; stroke: #c86b6b; stroke-width: 1.5; rx: 8; }
+      .boxGray { fill: #f4f6f8; stroke: #9aa4b2; stroke-width: 1.5; rx: 8; }
+      .title { font: 700 24px Arial, sans-serif; fill: #172033; }
+      .subtitle { font: 400 14px Arial, sans-serif; fill: #526071; }
+      .label { font: 700 15px Arial, sans-serif; fill: #1f2937; }
+      .small { font: 400 12.5px Arial, sans-serif; fill: #425066; }
+      .tiny { font: 400 11px Arial, sans-serif; fill: #59677a; }
+      .note { font: 700 13px Arial, sans-serif; fill: #9a4d16; }
+      .arrow { stroke: #516174; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .arrowSoft { stroke: #75869b; stroke-width: 1.7; fill: none; marker-end: url(#arrowSoft); stroke-dasharray: 6 5; }
+      .safe { stroke: #b84a4a; stroke-width: 2.2; fill: none; stroke-dasharray: 8 6; }
+      .safeText { font: 700 13px Arial, sans-serif; fill: #b84a4a; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8.4" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#516174" />
+    </marker>
+    <marker id="arrowSoft" markerWidth="10" markerHeight="10" refX="8.4" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#75869b" />
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1240" height="860" />
+  <text class="title" x="40" y="44">Physical Agent 当前实现架构</text>
+  <text class="subtitle" x="40" y="68">当前代码状态：请求侧只写提案 / 状态；只有 watch 侧能经过 SafetyGate 调 driver.execute。</text>
+
+  <rect class="band" x="30" y="95" width="1180" height="145" rx="12" />
+  <text class="label" x="50" y="122">用户入口与服务层</text>
+  <rect class="boxBlue" x="60" y="145" width="250" height="70" />
+  <text class="label" x="80" y="171">React / AntD Dashboard</text>
+  <text class="small" x="80" y="193">chat stream, upload, settings, state view</text>
+  <rect class="boxBlue" x="370" y="145" width="250" height="70" />
+  <text class="label" x="390" y="171">FastAPI API</text>
+  <text class="small" x="390" y="193">/api/chat, /api/chat/stream, /api/state</text>
+  <rect class="boxGray" x="680" y="145" width="220" height="70" />
+  <text class="label" x="700" y="171">CLI</text>
+  <text class="small" x="700" y="193">init, chat, watch, state-check, migrate</text>
+  <rect class="boxGray" x="960" y="145" width="210" height="70" />
+  <text class="label" x="980" y="171">MCP Facade</text>
+  <text class="small" x="980" y="193">submit_task, propose_action, get_state</text>
+
+  <rect class="band" x="30" y="270" width="1180" height="185" rx="12" />
+  <text class="label" x="50" y="297">认知侧 Agent / LLM / 输入上下文</text>
+  <rect class="boxGreen" x="60" y="320" width="250" height="90" />
+  <text class="label" x="80" y="347">ChatRuntime / AgentRuntime</text>
+  <text class="small" x="80" y="370">rule_based / llm / tool_loop</text>
+  <text class="small" x="80" y="391">API-safe flags disable code/hardware helpers</text>
+  <rect class="boxGreen" x="370" y="320" width="250" height="90" />
+  <text class="label" x="390" y="347">OpenAI-Compatible Client</text>
+  <text class="small" x="390" y="370">OpenAI SDK, base_url, structured JSON</text>
+  <text class="small" x="390" y="391">chat completions + responses streaming</text>
+  <rect class="boxGreen" x="680" y="320" width="220" height="90" />
+  <text class="label" x="700" y="347">Memory / Retrieval</text>
+  <text class="small" x="700" y="370">structured notes, uploads, chunks</text>
+  <text class="small" x="700" y="391">untrusted proposal context only</text>
+  <rect class="boxGreen" x="960" y="320" width="210" height="90" />
+  <text class="label" x="980" y="347">Tool Loop</text>
+  <text class="small" x="980" y="370">allowlisted proposal tools</text>
+  <text class="small" x="980" y="391">never executes hardware</text>
+
+  <rect class="band" x="30" y="485" width="1180" height="165" rx="12" />
+  <text class="label" x="50" y="512">状态层：单一 active backend</text>
+  <rect class="boxOrange" x="60" y="535" width="250" height="85" />
+  <text class="label" x="80" y="562">StateStore Protocol</text>
+  <text class="small" x="80" y="585">read/write task, actions, chat, memory</text>
+  <text class="small" x="80" y="606">atomic append / claim / mark actions</text>
+  <rect class="boxOrange" x="370" y="535" width="250" height="85" />
+  <text class="label" x="390" y="562">SQLite backend</text>
+  <text class="small" x="390" y="585">workspace/state.db source of truth</text>
+  <text class="small" x="390" y="606">payloads are JSON, WAL, lease recovery</text>
+  <rect class="boxOrange" x="680" y="535" width="220" height="85" />
+  <text class="label" x="700" y="562">Markdown import</text>
+  <text class="small" x="700" y="585">retired backend; migration input only</text>
+  <text class="small" x="700" y="606">migrate-md-to-sqlite preserves old workspaces</text>
+  <rect class="boxOrange" x="960" y="535" width="210" height="85" />
+  <text class="label" x="980" y="562">Audit / Human View</text>
+  <text class="small" x="980" y="585">export-audit, state-check</text>
+  <text class="small" x="980" y="606">view only, not another backend</text>
+
+  <rect class="band" x="30" y="680" width="1180" height="130" rx="12" />
+  <text class="label" x="50" y="707">执行侧：唯一硬件动作路径</text>
+  <rect class="boxRed" x="60" y="730" width="230" height="55" />
+  <text class="label" x="80" y="754">WatchRuntime</text>
+  <text class="small" x="80" y="775">claim pending action, heartbeat, halt</text>
+  <rect class="boxRed" x="350" y="730" width="220" height="55" />
+  <text class="label" x="370" y="754">SafetyGate</text>
+  <text class="small" x="370" y="775">validate capability, params, safety rules</text>
+  <rect class="boxRed" x="630" y="730" width="230" height="55" />
+  <text class="label" x="650" y="754">PhysicalDriver</text>
+  <text class="small" x="650" y="775">execute, observe, heartbeat, halt</text>
+  <rect class="boxRed" x="920" y="730" width="230" height="55" />
+  <text class="label" x="940" y="754">Transport / Hardware</text>
+  <text class="small" x="940" y="775">mock, websocket, serial, device SDK</text>
+
+  <path class="arrow" d="M310 180 H370" />
+  <path class="arrow" d="M620 180 H680" />
+  <path class="arrow" d="M900 180 H960" />
+  <path class="arrow" d="M495 215 V320" />
+  <path class="arrow" d="M185 215 V320" />
+  <path class="arrow" d="M790 215 V320" />
+  <path class="arrow" d="M1065 215 V320" />
+
+  <path class="arrow" d="M310 365 H370" />
+  <path class="arrowSoft" d="M620 365 H680" />
+  <path class="arrowSoft" d="M900 365 H960" />
+  <path class="arrow" d="M185 410 V535" />
+  <path class="arrow" d="M495 410 V535" />
+  <path class="arrow" d="M790 410 V535" />
+  <path class="arrow" d="M1065 410 V535" />
+
+  <path class="arrow" d="M310 577 H370" />
+  <path class="arrowSoft" d="M620 577 H680" />
+  <path class="arrowSoft" d="M900 577 H960" />
+  <path class="arrow" d="M185 620 V730" />
+  <path class="arrow" d="M290 757 H350" />
+  <path class="arrow" d="M570 757 H630" />
+  <path class="arrow" d="M860 757 H920" />
+
+  <path class="safe" d="M40 665 H1200" />
+  <text class="safeText" x="50" y="663">安全边界：上方只能生成/保存提案与上下文；下方 watch 才能执行硬件动作</text>
+
+  <text class="note" x="60" y="838">注意：JSON 是 SQLite payload / API 响应 / audit 视图的结构化格式；当前没有独立 JsonStateStore，也没有 GUI 热切换 backend。</text>
+</svg>

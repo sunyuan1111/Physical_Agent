@@ -7,7 +7,7 @@ from typing import Any
 from physical_agent.agent.runtime import AgentRuntime
 from physical_agent.config import DEFAULT_CONFIG_NAME, load_config, write_default_config
 from physical_agent.doctor import doctor_ok, run_doctor
-from physical_agent.protocol.workspace import Workspace
+from physical_agent.state import open_state_store
 from physical_agent.watch.runtime import WatchRuntime
 
 
@@ -20,7 +20,7 @@ def setup_project(
 ) -> dict[str, Any]:
     path = write_default_config(config_path, overwrite=force)
     config = load_config(path)
-    workspace = Workspace(config.workspace_path(path.parent))
+    workspace = open_state_store(config, base_dir=path.parent)
     workspace.initialize(overwrite=force)
 
     result: dict[str, Any] = {

@@ -220,9 +220,16 @@ def test_gui_http_chat_endpoint(tmp_path):
             },
         )
         assert chat["ok"] is True
-        assert chat["executed"] == 2
+        assert chat["executed"] == 0
+        assert "```action-draft" in chat["message"]
+        assert chat["result"]["actions"] == []
+        assert [item["capability"] for item in chat["result"]["draft_actions"]] == [
+            "pick",
+            "place",
+        ]
         assert chat["state"]["chat"]["messages"][-1]["role"] == "assistant"
-        assert chat["state"]["world"]["state"]["objects"]["red_block"]["location"] == "tray"
+        assert chat["state"]["world"]["state"]["objects"]["red_block"]["location"] == "table"
+        assert chat["state"]["actions"]["pending"] == []
     finally:
         server.shutdown()
         server.server_close()
@@ -373,6 +380,9 @@ _LLM_ENV_KEYS = (
     "GPT_KEY",
     "GPT_URL",
     "GPT_MODEL",
+    "OPENAI_API_MODE",
+    "GPT_API_MODE",
+    "API_MODE",
     "API_KEY",
     "BASE_URL",
     "MODEL",

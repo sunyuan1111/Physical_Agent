@@ -2,9 +2,9 @@
 
 [English version](README.md)
 
-Physical Agent is a Markdown-native runtime for safe physical-world agents.
+Physical Agent is a safe runtime for physical-world agents with a SQLite default state store and Markdown audit compatibility.
 
-Physical Agent 是一个面向安全物理世界 agent 的 Markdown 原生运行时。v1 的重点不是堆功能，而是把认知侧 agent、物理侧 watch、driver 接入协议和安全边界拆清楚。
+Physical Agent 是一个面向安全物理世界 agent 的本地运行时。运行态 active backend 只支持 SQLite；Markdown parser / renderer 仍服务 SAFETY.md 文件真源、LOG.md 镜像、audit export 和旧 workspace 迁移输入。v1 的重点不是堆功能，而是把认知侧 agent、物理侧 watch、driver 接入协议和安全边界拆清楚。
 
 核心原则：
 
@@ -14,6 +14,8 @@ Agent can propose actions. Watch decides whether and how they touch the physical
 
 也就是说，agent 可以提出动作意图，但只有 watch 进程可以决定这些动作是否以及如何触达真实物理世界。
 
+准备接真实硬件前，请先读：[`docs/hardware-bringup-checklist.zh-CN.md`](docs/hardware-bringup-checklist.zh-CN.md)。CI 与测试策略见：[`docs/CI.zh-CN.md`](docs/CI.zh-CN.md)。
+
 ## 核心架构
 
 Physical Agent v1 采用双进程架构：
@@ -21,7 +23,7 @@ Physical Agent v1 采用双进程架构：
 ```text
 Terminal 1: physical-agent watch
 Terminal 2: physical-agent run --task "..."
-Workspace: Markdown files are the protocol between cognition and execution.
+StateStore: new projects use workspace/state.db by default; SAFETY.md remains a file source.
 ```
 
 `physical-agent watch` 是物理侧守护进程，负责：
@@ -30,15 +32,15 @@ Workspace: Markdown files are the protocol between cognition and execution.
 - 初始化 `workspace/`
 - 加载机器人或硬件 driver
 - 连接硬件或 simulator
-- 发布 `CAPABILITIES.md`
-- 更新 `WORLD.md`
-- 监听 `ACTIONS.md`
+- 发布 capabilities 到 SQLite 黑板
+- 更新 world 到 SQLite 黑板
+- 原子领取 SQLite action board
 - 在执行前做 safety gate 校验
 - 调用 `driver.execute(action)`
-- 写入 `FEEDBACK.md`
+- 写入 feedback
 - 追加 `LOG.md`
 
-`physical-agent run` 和 `physical-agent chat` 是认知侧入口，负责读取 Markdown workspace、理解任务、生成结构化 action intent，并写入 `ACTIONS.md`。
+`physical-agent run` 和 `physical-agent chat` 是认知侧入口，负责读取当前 StateStore、理解任务、生成结构化 action intent，并写入 pending action。
 
 现在 `physical-agent chat` 也会自动识别代码类请求，比如“修改这个文件”“写测试”“修复这个 bug”“帮我接入这个 SDK”。命中后，它会切换到代码技能：在当前仓库根目录内直接写文件、运行测试、记录 lessons，并返回修改结果。这个能力仍然不改变物理执行边界，真正能接触硬件的只有 `physical-agent watch`。
 
@@ -139,9 +141,25 @@ physical-agent run --task "pick the red block and place it on the tray"
 physical-agent inspect
 ```
 
-## Workspace 协议
+## StateStore 与 Workspace 协议
 
-`workspace/*.md` 不是普通日志，而是 v1 的核心通信协议。
+新项目默认配置为：
+
+```yaml
+workspace:
+  path: ./workspace
+  backend: sqlite
+```
+
+运行时通过 `StateStore` Protocol 打开**一个且仅一个 active backend**：SQLite。动态运行状态写入 `workspace/state.db`；SQLite 表里的 payload 是 JSON。API/GUI 返回的 JSON 是结构化传输与渲染视图，不是另一套独立存储层。`SAFETY.md` 仍是人类拥有的文件真源，watch 每次执行前都会读取并强制执行。`export-audit` 可以把当前 SQLite 状态导出为可读审计视图到 `workspace/audit/`。
+
+旧 Markdown workspace 已不能作为 active backend 打开。已有旧项目先迁移：
+
+```powershell
+physical-agent migrate-md-to-sqlite --config physical-agent.yaml
+```
+
+迁移完成后，把 `physical-agent.yaml` 改成 `workspace.backend: sqlite`，再启动 CLI/API/GUI/watch。迁移命令保留一个版本周期，使用迁移专用 legacy reader 读取旧文件。
 
 ```text
 workspace/
@@ -158,22 +176,26 @@ workspace/
   artifacts/
 ```
 
-每个协议 Markdown 文件都使用 YAML front matter。正文可以有自然语言摘要，机器可读数据放在 fenced YAML code block 中。
+旧协议 Markdown 文件使用 YAML front matter。正文可以有自然语言摘要，机器可读数据放在 fenced YAML code block 中。它们现在只作为迁移输入格式和审计/安全相关工具链的一部分保留。
 
-文件职责：
+旧格式中的文件职责：
 
-- `TASK.md`：当前任务和人类约束
-- `CAPABILITIES.md`：watch 根据 driver capabilities 自动生成，agent 只读
-- `WORLD.md`：watch 写入的当前世界状态
-- `ACTIONS.md`：agent 写入的 pending / completed / cancelled action board
-- `FEEDBACK.md`：watch 写入的执行反馈
-- `SAFETY.md`：人类拥有，watch 强制执行
-- `LOG.md`：审计日志
-- `CHAT.md`：人类和 agent 的对话历史
-- `PLAN.md`：chat agent 当前意图、步骤和 proposed actions
-- `MEMORY.md`：chat agent 跨轮次保留的小型记忆
+- `TASK.md`：记录当前任务和人类约束。
+- `CAPABILITIES.md`：由 watch 根据 driver capabilities 生成，agent 只读。
+- `WORLD.md`：记录 watch 写入的世界状态。
+- `ACTIONS.md`：记录 agent 写入的 pending / completed / cancelled action board。
+- `FEEDBACK.md`：记录 watch 写入的执行反馈。
+- `SAFETY.md`：仍由人类拥有，watch 强制执行。
+- `LOG.md`：仍作为人类可读日志镜像。
+- `CHAT.md`：记录人类和 agent 的对话历史。
+- `PLAN.md`：记录 chat agent 当前意图、步骤和 proposed actions。
+- `MEMORY.md`：记录 chat agent 跨轮次保留的小型记忆。
 
-静态启动配置放在 `physical-agent.yaml`。动态运行状态放在 Markdown workspace。
+静态启动配置放在 `physical-agent.yaml`。动态运行状态放在 `workspace/state.db`。项目没有 `JsonStateStore`，也没有 “JSON backend”：JSON 是 SQLite payload、API 响应和 GUI 渲染的数据格式。
+
+GUI 不支持 live backend switch，也没有“迁移并自动切换”API。`migrate-md-to-sqlite` 只做 Markdown -> SQLite 迁移，不会自动修改已有 config；`export-audit` 只导出审计视图，不会修改 backend 或 action board。不提供 SQLite -> Markdown 反向迁移。
+
+更完整的 backend 说明见 [`docs/state-backends.zh-CN.md`](docs/state-backends.zh-CN.md)。
 
 ## Driver Contract
 
@@ -194,7 +216,7 @@ my_robot_driver/
 - driver 只和 `physical-agent watch` 交互
 - driver 不解析 Markdown
 - driver 不调用 agent runtime
-- agent 只通过 Markdown 看见 capabilities、world、actions 和 feedback
+- agent 只通过 StateStore 看见 capabilities、world、actions 和 feedback
 - agent 不直接调用硬件 SDK
 
 生成一个空 driver 模板：
@@ -248,7 +270,7 @@ LLM coding 会先生成安全脚手架，再把 SDK 片段和脚手架发给模�
 这不代表 LLM 可以绕过安全边界。接入助手只帮助写 watch 侧 driver 草稿和文档；真正执行动作时仍然必须经过：
 
 ```text
-agent -> ACTIONS.md -> watch safety gate -> driver.execute(action)
+agent -> action board -> watch safety gate -> driver.execute(action)
 ```
 
 小智 MCP 风格硬件接入示例：
@@ -325,6 +347,8 @@ GPT_MODEL=gpt-5.4
 - API key：`GPT_KEY` 或 `OPENAI_API_KEY`
 - Base URL：`GPT_URL` 或 `OPENAI_BASE_URL`
 - Model：`GPT_MODEL` 或 `OPENAI_MODEL`
+
+LLM 调用默认启用 reasoning / deep-thinking：OpenAI Responses API 会使用官方 `reasoning` 参数；Chat Completions 兼容服务只有在配置 `GPT_REASONING_EXTRA_BODY` / `OPENAI_REASONING_EXTRA_BODY` 时才会透传 provider-specific thinking 参数。不支持时会自动兼容降级并保持普通 chat 可用。
 
 测试 API 连接：
 
@@ -406,6 +430,8 @@ pytest -q
 
 - Markdown front matter 和 fenced YAML parser / renderer
 - workspace 初始化、revision 递增、log append
+- SQLite StateStore 的原子动作、lease recovery、迁移、state-check、audit export
+- 默认 SQLite init / setup / state-check / export-audit
 - driver manifest 和 config schema 校验
 - built-in driver 与本地 driver loader
 - 硬件接入助手生成可加载 driver scaffold
@@ -414,7 +440,7 @@ pytest -q
 - mock arm pick/place 状态变化
 - rule-based planner
 - watch runtime step
-- 端到端 Markdown loop
+- 端到端 SQLite loop
 - 一条命令 setup 和 smoke test
 - doctor 健康检查
 - GUI HTTP endpoints

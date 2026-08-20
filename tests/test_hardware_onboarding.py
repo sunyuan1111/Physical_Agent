@@ -11,6 +11,7 @@ from physical_agent.drivers.loader import load_driver
 from physical_agent.protocol.schemas import Action
 from physical_agent.protocol.workspace import Workspace
 from physical_agent.quickstart import setup_project
+from physical_agent.state import open_state_store
 
 
 def _make_vendor_sdk(tmp_path: Path) -> Path:
@@ -250,10 +251,10 @@ def test_chat_runtime_integration_request_generates_scaffold(tmp_path):
     )
 
     output_path = Path(result["integration"]["output_path"])
-    workspace = Workspace(tmp_path / "workspace")
+    store = open_state_store(config_path=config_path)
 
     assert result["mode"] == "integration"
-    assert workspace.read_plan()["plan"].intent == "integrate"
+    assert store.read_plan()["plan"].intent == "integrate"
     assert output_path.exists()
     assert output_path.parent == tmp_path / "physical-agent-integration"
     assert (output_path / "README.zh-CN.md").read_text(encoding="utf-8").startswith("#")
@@ -410,6 +411,9 @@ _LLM_ENV_KEYS = (
     "GPT_KEY",
     "GPT_URL",
     "GPT_MODEL",
+    "OPENAI_API_MODE",
+    "GPT_API_MODE",
+    "API_MODE",
     "API_KEY",
     "BASE_URL",
     "MODEL",

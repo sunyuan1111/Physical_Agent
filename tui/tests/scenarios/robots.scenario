@@ -1,0 +1,40 @@
+{
+  "name": "robots",
+  "cases": [
+    {
+      "name": "robot list, robot detail, and capability detail commands",
+      "useSse": true,
+      "initialState": "robotsReady",
+      "initialConfig": "default",
+      "events": {
+        "behavior": "idle",
+        "items": [
+          { "type": "hello", "payload": { "watch_enabled": true } }
+        ]
+      },
+      "initialExpectOutput": ["Physical Agent TUI", "Ready."],
+      "steps": [
+        {
+          "input": "/view robots",
+          "covers": ["/view robots"],
+          "expectOutput": ["robots", "arm_1", "mock_arm", "capabilities 2"]
+        },
+        {
+          "input": "/robots",
+          "covers": ["/robots"],
+          "expectOutput": ["View: robots", "health idle", "approval capabilities 1"]
+        },
+        {
+          "input": "/robot arm_1",
+          "covers": ["/robot"],
+          "expectOutput": ["robot arm_1", "driver: mock_arm", "mode: mock", "health: idle"]
+        },
+        {
+          "input": "/capabilities arm_1",
+          "covers": ["/capabilities"],
+          "expectOutput": ["capabilities arm_1", "pick", "requires_approval", "params_schema: type object; props object_id"]
+        }
+      ]
+    }
+  ]
+}

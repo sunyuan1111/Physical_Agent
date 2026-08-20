@@ -48,6 +48,29 @@ config_schema:
     wait_for_responses:
       type: boolean
       default: true
+    reconnect_policy:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          default: false
+        max_retries:
+          type: integer
+          minimum: 0
+          default: 3
+        backoff_base_ms:
+          type: integer
+          minimum: 1
+          default: 250
+        backoff_cap_ms:
+          type: integer
+          minimum: 1
+          default: 5000
+        jitter_ms:
+          type: integer
+          minimum: 0
+          default: 0
+      additionalProperties: false
     device_name:
       type: string
       default: xiaozhi-device

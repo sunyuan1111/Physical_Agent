@@ -12,8 +12,8 @@ from physical_agent.agent.runtime import AgentRuntime
 from physical_agent.config import DEFAULT_CONFIG_NAME, load_config, write_default_config
 from physical_agent.doctor import doctor_ok, run_doctor
 from physical_agent.protocol.schemas import Action
-from physical_agent.protocol.workspace import Workspace
 from physical_agent.quickstart import setup_project
+from physical_agent.state import open_state_store
 from physical_agent.watch.runtime import WatchRuntime
 
 
@@ -35,7 +35,7 @@ class GuiController:
 
         config = load_config(self.config_path)
         runtime_info = _runtime_info(config)
-        workspace = Workspace(config.workspace_path(self.config_path.parent))
+        workspace = open_state_store(config, base_dir=self.config_path.parent)
         if not workspace.exists():
             return {
                 "ready": False,
@@ -148,7 +148,7 @@ class GuiController:
             if not self.config_path.exists():
                 write_default_config(self.config_path)
             config = load_config(self.config_path)
-            Workspace(config.workspace_path(self.config_path.parent)).initialize()
+            open_state_store(config, base_dir=self.config_path.parent).initialize()
             if llm:
                 result = DriverCodingAgent(
                     source,
@@ -209,7 +209,7 @@ class GuiController:
         if not self.config_path.exists():
             write_default_config(self.config_path)
         config = load_config(self.config_path)
-        Workspace(config.workspace_path(self.config_path.parent)).initialize()
+        open_state_store(config, base_dir=self.config_path.parent).initialize()
         if self.watch_runtime is None or not self.watch_runtime.started:
             self.watch_runtime = WatchRuntime(self.config_path)
             asyncio.run(self.watch_runtime.setup())

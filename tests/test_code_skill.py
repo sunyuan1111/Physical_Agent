@@ -12,8 +12,8 @@ from physical_agent.agent.code_runtime import CodeSkillRuntime, _normalize_test_
 from physical_agent.agent.skills import SkillRouter
 from physical_agent.cli import app
 from physical_agent.protocol.schemas import CodeTaskIntent, CodeTaskResult
-from physical_agent.protocol.workspace import Workspace
 from physical_agent.quickstart import setup_project
+from physical_agent.state import open_state_store
 
 
 class FakeCodeClient:
@@ -273,8 +273,8 @@ def test_chat_runtime_routes_code_task_and_persists_result(tmp_path, monkeypatch
     assert result["code_result"]["summary"] == "Patched via chat code skill."
     assert "代码任务" in result["reply"]
     assert "改动文件: README.md." in result["reply"]
-    workspace = Workspace(tmp_path / "workspace")
-    messages = workspace.read_chat()["messages"]
+    store = open_state_store(config_path=config_path)
+    messages = store.read_chat()["messages"]
     assert messages[-1].metadata["code_result"]["summary"] == "Patched via chat code skill."
 
 

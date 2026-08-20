@@ -1,0 +1,124 @@
+{
+  "name": "error",
+  "cases": [
+    {
+      "name": "API offline keeps TUI readable",
+      "useSse": false,
+      "initialState": "ready",
+      "initialConfig": "default",
+      "fail": {
+        "health": "API offline",
+        "state": "API offline",
+        "config": "Config offline",
+        "llmSettings": "LLM offline",
+        "testLlmSettings": "LLM offline"
+      },
+      "initialExpectOutput": ["Physical Agent TUI", "disconnected", "API unavailable"],
+      "steps": [
+        {
+          "input": "/view status",
+          "covers": ["API offline"],
+          "expectOutput": ["status", "connection: disconnected via polling", "API unavailable"]
+        }
+      ]
+    },
+    {
+      "name": "SSE error degrades to polling fallback",
+      "useSse": true,
+      "initialState": "ready",
+      "initialConfig": "default",
+      "events": {
+        "behavior": "error",
+        "error": "socket broke",
+        "items": [
+          { "type": "hello", "payload": { "watch_enabled": true } }
+        ]
+      },
+      "initialExpectOutput": ["SSE disconnected; polling fallback active. socket broke", "degraded"],
+      "steps": [
+        {
+          "input": "/view chat",
+          "covers": ["SSE error"],
+          "expectOutput": ["View: chat", "API unavailable: SSE disconnected; polling fallback active. socket broke"]
+        }
+      ]
+    },
+    {
+      "name": "SSE clean EOF degrades to polling fallback",
+      "useSse": true,
+      "initialState": "ready",
+      "initialConfig": "default",
+      "events": {
+        "behavior": "clean-eof",
+        "items": [
+          { "type": "hello", "payload": { "watch_enabled": false } }
+        ]
+      },
+      "initialExpectOutput": ["SSE stream closed; using polling fallback.", "degraded", "Watch: disabled"],
+      "steps": [
+        {
+          "input": "/view status",
+          "covers": ["SSE clean EOF"],
+          "expectOutput": ["connection: connected via degraded", "SSE stream closed; using polling fallback."]
+        }
+      ]
+    },
+    {
+      "name": "missing arguments and invalid commands stay local",
+      "useSse": false,
+      "initialState": "ready",
+      "initialConfig": "default",
+      "initialExpectOutput": ["Physical Agent TUI", "polling", "Ready.", "LLM connected"],
+      "steps": [
+        {
+          "input": "/task",
+          "covers": ["missing arguments"],
+          "expectOutput": ["/task requires text."],
+          "expectCalls": { "submitTask": 0 }
+        },
+        {
+          "input": "/approve",
+          "expectOutput": ["/approve requires an action id."],
+          "expectCalls": { "approveAction": 0 }
+        },
+        {
+          "input": "/reject act_001",
+          "expectOutput": ["/reject requires an action id and reason."],
+          "expectCalls": { "rejectAction": 0 }
+        },
+        {
+          "input": "/reset",
+          "expectOutput": ["/reset requires confirmation text."],
+          "expectCalls": { "resetWorkspace": 0 }
+        },
+        {
+          "input": "/robot",
+          "expectOutput": ["/robot requires a robot id."]
+        },
+        {
+          "input": "/capabilities",
+          "expectOutput": ["/capabilities requires a robot id."]
+        },
+        {
+          "input": "/upload",
+          "expectOutput": ["/upload requires a file path."],
+          "expectCalls": { "uploadFile": 0 }
+        },
+        {
+          "input": "/view",
+          "expectOutput": ["/view requires a view name."]
+        },
+        {
+          "input": "/view hardware",
+          "expectOutput": ["Unknown view: hardware"]
+        },
+        {
+          "input": "/execute act_001",
+          "covers": ["invalid command"],
+          "expectOutput": ["/execute is intentionally unavailable", "watch remains the only executor"],
+          "expectCalls": { "approveAction": 0, "submitTask": 0 }
+        }
+      ]
+    }
+  ]
+}

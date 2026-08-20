@@ -59,12 +59,20 @@ class SafetyGate:
             return SafetyDecision(False, "Autonomous execution is disabled by SAFETY.md")
 
         if capability.requires_approval:
-            return SafetyDecision(False, f"Capability requires human approval: {capability.name}")
+            if not _has_human_approval(action):
+                return SafetyDecision(
+                    False,
+                    f"Capability requires approved human approval: {capability.name}",
+                )
 
         if robot.requires_approval and self.safety_rules.get(
             "require_human_approval_for_real_hardware", True
         ):
-            return SafetyDecision(False, f"Robot requires human approval: {action.robot}")
+            if not _has_human_approval(action):
+                return SafetyDecision(
+                    False,
+                    f"Robot requires approved human approval: {action.robot}",
+                )
 
         schema_decision = _validate_params_schema(action, capability)
         if not schema_decision.ok:
@@ -90,6 +98,12 @@ def _find_capability(capabilities: list[Capability], name: str) -> Capability | 
         if capability.name == name:
             return capability
     return None
+
+
+def _has_human_approval(action: Action) -> bool:
+    metadata = action.metadata if isinstance(action.metadata, dict) else {}
+    approval = metadata.get("approval")
+    return bool(isinstance(approval, dict) and approval.get("status") == "approved")
 
 
 def _validate_params_schema(action: Action, capability: Capability) -> SafetyDecision:

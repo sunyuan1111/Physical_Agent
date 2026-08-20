@@ -20,6 +20,12 @@ robots:
     config:
       mode: ws
       wait_for_responses: false
+      reconnect_policy:
+        enabled: false
+        max_retries: 3
+        backoff_base_ms: 250
+        backoff_cap_ms: 5000
+        jitter_ms: 0
       device_name: xiaozhi-demo-device
       tool_prefix: self.device
       ws_url_env: XIAOZHI_MCP_URL

@@ -22,6 +22,11 @@ The example driver is `xiaozhi_mcp`. It supports:
 - `http` mode for a real MCP endpoint
 - `ws` mode for a robot that exposes a local WebSocket MCP socket directly
 
+In D1, `ws` mode uses the shared watch-side
+`physical_agent.drivers.transport.WebSocketTransport`. The transport remains an
+implementation detail of the driver/watch side; agent, API, and GUI flows still
+submit proposals only.
+
 ## Layout
 
 ```text
@@ -113,6 +118,21 @@ Some devices accept tool calls but do not return standard responses for
 `initialize` or `tools/list`. In that case, keep `wait_for_responses: false`
 so watch uses fire-and-forget control.
 
+WebSocket reconnect is opt-in. To enable communication-level reconnect:
+
+```yaml
+reconnect_policy:
+  enabled: true
+  max_retries: 3
+  backoff_base_ms: 250
+  backoff_cap_ms: 5000
+  jitter_ms: 0
+```
+
+Reconnect does not replay old actions. Commands attempted while the transport is
+reconnecting fail fast, and after reconnect the next observe/health pass is still
+the source of truth for robot state.
+
 If your MCP bridge exposes an HTTP JSON-RPC endpoint instead, use `mode: http`
 and keep the original endpoint-based configuration:
 
@@ -123,15 +143,20 @@ XIAOZHI_MCP_ENDPOINT=http://your-mcp-bridge
 XIAOZHI_MCP_TOKEN=if-needed
 ```
 
-If your MCP bridge exposes a non-HTTP transport, keep the Physical Agent side unchanged and add a small bridge that translates the transport into the HTTP JSON-RPC format used by the example driver.
+SerialTransport, ServoBus, hardware watchdog, and E-stop behavior are not part
+of D1. For serial or other non-WebSocket hardware, keep the Physical Agent
+request side unchanged and add a watch-side driver or bridge until those later
+layers exist.
 
 ## What the Driver Does
 
 `xiaozhi_mcp` handles:
 
 - `observe` to inspect the device state
-- `say` to speak a short sentence
-- `set_light` to control RGB light output
+- `set_volume` to set the device speaker volume
+- `otto_action` to run motions such as `hand_wave`, `walk`, `turn`, or `jump`
+- `home` to return the robot to its home pose
+- `stop` to stop the current motion
 
 Those capabilities are published into `CAPABILITIES.md`, so the agent only sees Markdown and never touches hardware directly.
 
@@ -142,7 +167,8 @@ Those capabilities are published into `CAPABILITIES.md`, so the agent only sees 
 2. Keep hardware logic in the watch-side driver.
 3. Begin with mock mode.
 4. Switch .env to the real MCP endpoint only after the mock flow works.
-5. The agent only writes workspace files.
+5. Keep transport usage on the watch/driver side.
+6. The agent, API, and GUI only write workspace proposals.
 ```
 
 ## Troubleshooting Order
@@ -168,8 +194,8 @@ You can copy `examples/xiaozhi_mcp_hardware/` as a starting point and then:
 
 1. Replace `xiaozhi_mcp` with your real driver name.
 2. Update `tools` to match the MCP tool names your device exposes.
-3. Replace `observe`, `say`, and `set_light` with your actual capability set.
-4. Swap `_post_jsonrpc()` for your real transport if needed.
+3. Replace `observe`, `set_volume`, `otto_action`, `home`, and `stop` with your actual capability set.
+4. Keep any custom communication layer inside the watch-side driver. WebSocket mode already uses the shared `WebSocketTransport`.
 
 In practice, integrators only need two files:
 
